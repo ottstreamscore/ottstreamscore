@@ -112,6 +112,22 @@ try {
 		$hasUrlDisplayCol = false;
 	}
 
+	// Check if last_seen column exists, add it if missing
+	$hasLastSeenCol = false;
+	try {
+		$pdo->query("SELECT last_seen FROM feeds LIMIT 1");
+		$hasLastSeenCol = true;
+	} catch (Throwable $e) {
+		// Column doesn't exist, try to add it
+		try {
+			$pdo->exec("ALTER TABLE feeds ADD COLUMN last_seen TIMESTAMP NULL DEFAULT NULL");
+			$hasLastSeenCol = true;
+		} catch (Throwable $e2) {
+			// Failed to add column, continue without cleanup functionality
+			$hasLastSeenCol = false;
+		}
+	}
+
 	$stFindFeed = $pdo->prepare("
 		SELECT id FROM feeds
 		WHERE url_hash = :h
@@ -143,6 +159,15 @@ try {
 		");
 	}
 
+	// Prepare statement to mark feed as seen
+	if ($hasLastSeenCol) {
+		$stMarkSeen = $pdo->prepare("
+			UPDATE feeds
+			SET last_seen = CURRENT_TIMESTAMP
+			WHERE id = :id
+		");
+	}
+
 	// Counters
 	$lines = 0;
 	$extinf = 0;
@@ -153,10 +178,16 @@ try {
 	$feedsInserted = 0;
 	$feedsUpdated = 0;
 	$feedsSkippedExisting = 0;
+	$feedsDeleted = 0;
 
 	$current = null;
 
 	$pdo->beginTransaction();
+
+	// Mark all feeds as stale at the start (if column exists)
+	if ($hasLastSeenCol) {
+		$pdo->exec("UPDATE feeds SET last_seen = NULL");
+	}
 
 	while (($line = fgets($fh)) !== false) {
 		$lines++;
@@ -254,6 +285,7 @@ try {
 					':h' => $h,
 				]);
 			}
+			$feedId = (int)$pdo->lastInsertId();
 			$feedsInserted++;
 		} else {
 			if ($mode === 'insert_only') {
@@ -278,10 +310,23 @@ try {
 			}
 		}
 
+		// Mark this feed as seen in this import
+		if ($hasLastSeenCol && $feedId > 0) {
+			$stMarkSeen->execute([':id' => $feedId]);
+		}
+
 		$current = null;
 	}
 
 	fclose($fh);
+
+	// Delete feeds that weren't in this playlist (if column exists)
+	if ($hasLastSeenCol) {
+		$stmt = $pdo->prepare("DELETE FROM feeds WHERE last_seen IS NULL");
+		$stmt->execute();
+		$feedsDeleted = $stmt->rowCount();
+	}
+
 	$pdo->commit();
 
 	$stats = [
@@ -296,6 +341,7 @@ try {
 		'Feeds inserted' => number_format($feedsInserted),
 		'Feeds updated' => number_format($feedsUpdated),
 		'Feeds skipped (existing)' => number_format($feedsSkippedExisting),
+		'Feeds deleted (removed from playlist)' => number_format($feedsDeleted),
 	];
 
 	redirect_back([
