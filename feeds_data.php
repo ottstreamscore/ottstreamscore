@@ -68,6 +68,15 @@ function status_rank(string $label): int
 	};
 }
 
+// === SCHEMA DETECTION ===
+$hasJunctionTable = false;
+try {
+	$pdo->query("SELECT 1 FROM channel_feeds LIMIT 1");
+	$hasJunctionTable = true;
+} catch (Throwable $e) {
+	$hasJunctionTable = false;
+}
+
 // DataTables core params
 $draw   = clamp_int($_GET['draw'] ?? 1, 1, 1000000000, 1);
 $start  = clamp_int($_GET['start'] ?? 0, 0, 1000000000, 0);
@@ -167,13 +176,24 @@ $colMap = [
 
 $orderExpr = $colMap[$orderCol] ?? "COALESCE(f.last_checked_at,'1970-01-01')";
 
+// === BUILD JOINS BASED ON SCHEMA ===
+if ($hasJunctionTable) {
+	// New schema: feeds <-> channel_feeds <-> channels
+	$fromJoin = "FROM feeds f
+		JOIN channel_feeds cf ON cf.feed_id = f.id
+		JOIN channels c ON c.id = cf.channel_id";
+} else {
+	// Old schema: feeds.channel_id -> channels.id
+	$fromJoin = "FROM feeds f
+		JOIN channels c ON c.id = f.channel_id";
+}
+
 // counts
 $total = (int)$pdo->query("SELECT COUNT(*) FROM feeds")->fetchColumn();
 
 $st = $pdo->prepare("
   SELECT COUNT(*)
-  FROM feeds f
-  JOIN channels c ON c.id = f.channel_id
+  {$fromJoin}
   {$wsql}
 ");
 $st->execute($params);
@@ -182,7 +202,7 @@ $filtered = (int)$st->fetchColumn();
 // main query
 $sql = "
   SELECT
-    f.channel_id,
+    c.id AS channel_id,
     f.last_ok,
     f.last_w,
     f.last_h,
@@ -209,8 +229,7 @@ $sql = "
       WHEN (COALESCE(f.last_h,0) > 0 OR COALESCE(f.last_w,0) > 0) THEN 1
       ELSE 0
     END AS res_rank
-  FROM feeds f
-  JOIN channels c ON c.id = f.channel_id
+  {$fromJoin}
   {$wsql}
   ORDER BY {$orderExpr} {$orderDir}
   LIMIT ? OFFSET ?
