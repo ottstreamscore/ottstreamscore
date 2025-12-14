@@ -39,8 +39,9 @@ try {
 	$params = [];
 
 	if ($q !== '') {
-		$where[] = '(c.tvg_name LIKE :q OR c.tvg_id LIKE :q)';
-		$params[':q'] = "%{$q}%";
+		$where[] = '(c.tvg_name LIKE :q1 OR c.tvg_id LIKE :q2)';
+		$params[':q1'] = "%{$q}%";
+		$params[':q2'] = "%{$q}%";
 	}
 	if ($group !== '') {
 		$where[] = 'c.group_title = :g';
