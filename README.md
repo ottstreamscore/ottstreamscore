@@ -176,3 +176,6 @@ Do what you wish with this. Offered with no warranty.
 ## Support
 
 Call a friend.
+
+## Screen Captures
+![Dashboard](images/dashboard.png)
