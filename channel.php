@@ -35,36 +35,81 @@ if ($tvgId === '') {
 	exit;
 }
 
+// === SCHEMA DETECTION ===
+$hasJunctionTable = false;
+try {
+	$pdo->query("SELECT 1 FROM channel_feeds LIMIT 1");
+	$hasJunctionTable = true;
+} catch (Throwable $e) {
+	$hasJunctionTable = false;
+}
+
 // Pull ALL channels that share this tvg-id + their feeds
-$st = $pdo->prepare("
-  SELECT
-    c.id AS channel_id,
-    c.group_title,
-    c.tvg_name,
-    c.tvg_logo,
-    c.tvg_id,
+if ($hasJunctionTable) {
+	// New schema: use junction table
+	$st = $pdo->prepare("
+	  SELECT
+	    c.id AS channel_id,
+	    c.group_title,
+	    c.tvg_name,
+	    c.tvg_logo,
+	    c.tvg_id,
 
-    f.id AS feed_id,
-    f.last_ok,
-    f.reliability_score,
-    f.last_w,
-    f.last_h,
-    f.last_fps,
-    f.last_codec,
-    f.last_checked_at,
-    COALESCE(f.url_display, f.url) AS url_any,
+	    f.id AS feed_id,
+	    f.last_ok,
+	    f.reliability_score,
+	    f.last_w,
+	    f.last_h,
+	    f.last_fps,
+	    f.last_codec,
+	    f.last_checked_at,
+	    COALESCE(f.url_display, f.url) AS url_any,
 
-    (COALESCE(f.last_w,0) * COALESCE(f.last_h,0)) AS pixels
-  FROM channels c
-  JOIN feeds f ON f.channel_id = c.id
-  WHERE c.tvg_id = :tvg
-  ORDER BY
-    COALESCE(f.reliability_score,0) DESC,
-    pixels DESC,
-    COALESCE(f.last_fps,0) DESC,
-    f.last_ok DESC,
-    f.last_checked_at DESC
-");
+	    (COALESCE(f.last_w,0) * COALESCE(f.last_h,0)) AS pixels
+	  FROM channels c
+	  JOIN channel_feeds cf ON cf.channel_id = c.id
+	  JOIN feeds f ON f.id = cf.feed_id
+	  WHERE c.tvg_id = :tvg
+	  ORDER BY
+	    COALESCE(f.reliability_score,0) DESC,
+	    pixels DESC,
+	    COALESCE(f.last_fps,0) DESC,
+	    f.last_ok DESC,
+	    f.last_checked_at DESC
+	");
+} else {
+	// Old schema: direct join
+	$st = $pdo->prepare("
+	  SELECT
+	    c.id AS channel_id,
+	    c.group_title,
+	    c.tvg_name,
+	    c.tvg_logo,
+	    c.tvg_id,
+
+	    f.id AS feed_id,
+	    f.last_ok,
+	    f.reliability_score,
+	    f.last_w,
+	    f.last_h,
+	    f.last_fps,
+	    f.last_codec,
+	    f.last_checked_at,
+	    COALESCE(f.url_display, f.url) AS url_any,
+
+	    (COALESCE(f.last_w,0) * COALESCE(f.last_h,0)) AS pixels
+	  FROM channels c
+	  JOIN feeds f ON f.channel_id = c.id
+	  WHERE c.tvg_id = :tvg
+	  ORDER BY
+	    COALESCE(f.reliability_score,0) DESC,
+	    pixels DESC,
+	    COALESCE(f.last_fps,0) DESC,
+	    f.last_ok DESC,
+	    f.last_checked_at DESC
+	");
+}
+
 $st->execute([':tvg' => $tvgId]);
 $rows = $st->fetchAll(PDO::FETCH_ASSOC);
 
