@@ -31,14 +31,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			$sql = "
                 UPDATE feeds
                 SET
-                    url = REGEXP_REPLACE(url, :pat, CONCAT('$1', :u, '/', :p, '/')),
+                    url = REGEXP_REPLACE(url, :pat1, CONCAT('\\\\1', :u1, '/', :p1, '/')),
                     url_display = REGEXP_REPLACE(
                         COALESCE(url_display, url),
-                        :pat,
+                        :pat2,
                         '/live/***/***/'
                     ),
                     url_hash = SHA1(
-                        REGEXP_REPLACE(url, :pat, CONCAT('$1', :u, '/', :p, '/'))
+                        REGEXP_REPLACE(url, :pat3, CONCAT('\\\\1', :u2, '/', :p2, '/'))
                     )
                 WHERE
                     url LIKE :like1
@@ -46,23 +46,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ";
 			$st = $pdo->prepare($sql);
 			$st->execute([
-				':pat' => $pattern,
-				':u'   => $newUser,
-				':p'   => $newPass,
+				':pat1' => $pattern,
+				':u1'   => $newUser,
+				':p1'   => $newPass,
+				':pat2' => $pattern,
+				':pat3' => $pattern,
+				':u2'   => $newUser,
+				':p2'   => $newPass,
 				':like1' => $host . '/live/%',
 				':like2' => str_replace('http://', 'https://', $host) . '/live/%',
 			]);
 			$affectedFeeds = $st->rowCount();
 
-			// Force everything to be due now (recheck quickly)
+			// Force everything to be due now (recheck quickly) - only if checkbox is checked
 			$affectedQueue = 0;
 			if ($forceDue) {
 				$st2 = $pdo->prepare("
                     UPDATE feed_check_queue q
                     JOIN feeds f ON f.id = q.feed_id
                     SET q.next_run_at = NOW(),
-                        q.locked_at = NULL,
-                        q.locked_by = NULL
+                        q.locked_at = NULL
                     WHERE f.url LIKE :like1 OR f.url LIKE :like2
                 ");
 				$st2->execute([
@@ -74,7 +77,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 			$pdo->commit();
 			$did = true;
-			$msg = "Updated {$affectedFeeds} feeds. " . ($forceDue ? "Forced {$affectedQueue} queued items due now." : "");
+			$msg = "Updated {$affectedFeeds} feeds. " . ($forceDue ? "Forced {$affectedQueue} queued items due now." : "Queue items unchanged.");
 		} catch (Throwable $e) {
 			$pdo->rollBack();
 			$err = $e->getMessage();
