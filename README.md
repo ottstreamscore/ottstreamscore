@@ -179,3 +179,5 @@ Call a friend.
 
 ## Screen Captures
 ![Dashboard](images/dashboard.png)
+![Feeds](images/feeds.png)
+![Channel Report](images/single_channel.png)
