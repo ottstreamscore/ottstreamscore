@@ -37,7 +37,7 @@ Many IPTV playlists contain duplicate channels (multiple streams for the same ch
 
 **Media Tools (recommended):**
 - `ffprobe` installed and available in PATH
-- `ffmpeg` (optional)
+- `ffmpeg`
 
 > **Note:** If `ffprobe` is not available, basic reachability checks will still work, but codec, resolution, and FPS data will not be available.
 
@@ -109,7 +109,7 @@ Edit the `config.php` file in application directory with the following values:
 
 **Stream/Host:**
 ```php
-STREAM_HOST
+STREAM_HOST // stream doamin with http 
 ```
 
 **Database:**
