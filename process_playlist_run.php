@@ -89,7 +89,7 @@ try {
 
 	$stFindChannel = $pdo->prepare("
 		SELECT id FROM channels
-		WHERE tvg_id = :tvg_id AND tvg_name = :tvg_name AND group_title = :group_title
+		WHERE tvg_id = :tvg_id AND group_title = :group_title
 		LIMIT 1
 	");
 
@@ -100,7 +100,8 @@ try {
 
 	$stUpdateChannel = $pdo->prepare("
 		UPDATE channels
-		SET tvg_logo = :tvg_logo
+		SET tvg_name = :tvg_name,
+		    tvg_logo = :tvg_logo
 		WHERE id = :id
 	");
 
@@ -237,10 +238,9 @@ try {
 			$current['tvg_id'] = 'dummy-' . substr(sha1($current['tvg_name'] . '|' . $url), 0, 10);
 		}
 
-		// upsert channel instance (tvg_id + tvg_name + group_title)
+		// upsert channel instance (tvg_id + group_title)
 		$stFindChannel->execute([
 			':tvg_id' => $current['tvg_id'],
-			':tvg_name' => $current['tvg_name'],
 			':group_title' => $current['group_title'],
 		]);
 		$channelId = (int)($stFindChannel->fetchColumn() ?: 0);
@@ -255,8 +255,9 @@ try {
 			$channelId = (int)$pdo->lastInsertId();
 			$channelsInserted++;
 		} else {
-			// if logo changed, update it (cheap)
+			// if name or logo changed, update them
 			$stUpdateChannel->execute([
+				':tvg_name' => $current['tvg_name'],
 				':tvg_logo' => $current['tvg_logo'],
 				':id' => $channelId,
 			]);
