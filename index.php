@@ -150,11 +150,11 @@ $recent = $pdo->query("
 							: '<span class="badge bg-danger">FAIL</span>');
 
 					$classBadge = match ($class) {
-						'4K' => '<span class="badge bg-dark">4K</span>',
+						'4K' => '<span class="badge bg-warning text-dark">4K</span>',
 						'FHD' => '<span class="badge bg-primary">FHD</span>',
 						'HD' => '<span class="badge bg-info text-dark">HD</span>',
-						'SD' => '<span class="badge bg-light text-dark border">SD</span>',
-						default => '<span class="badge bg-secondary">UNK</span>',
+						'SD' => '<span class="badge bg-secondary">SD</span>',
+						default => '<span class="badge bg-light text-dark">UNK</span>',
 					};
 
 					$resDisp = ($w && $h) ? ($w . '×' . $h) : '—';
