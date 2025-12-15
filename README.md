@@ -92,6 +92,7 @@ When feeds are checked, the system records:
 - **Feeds** (`feeds.php`) - Server-side DataTables view with sorting and filtering by status, group, resolution, FPS, and last checked time
 - **Reports** (`reports.php`) - Aggregations and quick filters (top channels, dead feeds, quality breakdowns)
 - **Process Playlist** (`process_playlist.php`) - Import M3U files (safe to run repeatedly)
+- **Feed History** (`feed_history.php`) - View historical results from previous checks of a feed.
 
 ## Installation
 
