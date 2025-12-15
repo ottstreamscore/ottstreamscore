@@ -27,6 +27,15 @@ try {
 		return strlen($s) > $max ? substr($s, 0, $max) : $s;
 	}
 
+	// === SCHEMA DETECTION ===
+	$hasJunctionTable = false;
+	try {
+		$pdo->query("SELECT 1 FROM channel_feeds LIMIT 1");
+		$hasJunctionTable = true;
+	} catch (Throwable $e) {
+		$hasJunctionTable = false;
+	}
+
 	$draw   = clamp_int($_GET['draw'] ?? 1, 1, 1000000000, 1);
 	$start  = clamp_int($_GET['start'] ?? 0, 0, 1000000000, 0);
 	$length = clamp_int($_GET['length'] ?? 50, 1, 250, 50);
@@ -90,6 +99,20 @@ try {
 	$limitSql = "LIMIT {$length} OFFSET {$start}";
 
 	// ----- DATA -----
+	// Build feed count and last_checked subqueries based on schema
+	if ($hasJunctionTable) {
+		// New schema: count through junction table
+		$feedCountSql = "(SELECT COUNT(DISTINCT cf.feed_id) FROM channel_feeds cf WHERE cf.channel_id = c.id)";
+		$lastCheckedSql = "(SELECT MAX(f2.last_checked_at) 
+		                     FROM channel_feeds cf2 
+		                     JOIN feeds f2 ON f2.id = cf2.feed_id 
+		                     WHERE cf2.channel_id = c.id)";
+	} else {
+		// Old schema: direct join
+		$feedCountSql = "(SELECT COUNT(*) FROM feeds f WHERE f.channel_id = c.id)";
+		$lastCheckedSql = "(SELECT MAX(last_checked_at) FROM feeds f2 WHERE f2.channel_id = c.id)";
+	}
+
 	$sqlData = "
 		SELECT
 			c.id,
@@ -97,8 +120,8 @@ try {
 			c.tvg_name,
 			c.tvg_id,
 			c.tvg_logo,
-			(SELECT COUNT(*) FROM feeds f WHERE f.channel_id = c.id) AS feed_count,
-			(SELECT MAX(last_checked_at) FROM feeds f2 WHERE f2.channel_id = c.id) AS last_checked
+			{$feedCountSql} AS feed_count,
+			{$lastCheckedSql} AS last_checked
 		FROM channels c
 		{$whereSql}
 		ORDER BY {$orderBy}
@@ -122,8 +145,8 @@ try {
 
 		$data[] = [
 			'logo' => $logoHtml,
-			'group' => '<a href="feeds.php?group=' . urlencode($groupTitle) . '">' . h($groupTitle) . '</a>',
-			'name'  => '<a href="channel.php?id=' . $id . '">' . h((string)$r['tvg_name']) . '</a>',
+			'group' => '<a class="text-decoration-none" href="feeds.php?group=' . urlencode($groupTitle) . '">' . h($groupTitle) . '</a>',
+			'name'  => '<a class="text-decoration-none fw-semibold" href="channel.php?id=' . $id . '">' . h((string)$r['tvg_name']) . '</a>',
 			'tvg_id' => h((string)$r['tvg_id']),
 			'feeds'  => (int)$r['feed_count'],
 			'last_checked' => !empty($r['last_checked']) ? fmt_dt((string)$r['last_checked']) : '—',
