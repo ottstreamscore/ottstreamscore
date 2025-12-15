@@ -235,7 +235,6 @@ require_once __DIR__ . '/_boot.php';
 
 <body>
 
-	<!-- Replace your current nav links with this -->
 	<nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
 		<div class="container-fluid">
 			<a class="navbar-brand" href="index.php"><img src="logo_header.png" alt="OTT Stream Score"></a>
