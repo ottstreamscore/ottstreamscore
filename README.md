@@ -1,6 +1,6 @@
 # Stream Score IPTV Feed Monitor + Ranker
 
-A web application that imports LIVE channels from M3U playlists, continuously monitors stream health and quality, and ranks duplicate feeds to help you identify the best feed for each channel.
+A web application that imports LIVE channels from M3U playlists, continuously monitors stream health and quality, and ranks alternate feed options to help you identify the best feed for each channel.
 
 ## Overview
 
