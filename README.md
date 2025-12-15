@@ -182,3 +182,4 @@ Call a friend.
 ![Dashboard](images/dashboard.png)
 ![Feeds](images/feeds.png)
 ![Channel Report](images/single_channel.png)
+![Feed History](images/feed_history.png)
