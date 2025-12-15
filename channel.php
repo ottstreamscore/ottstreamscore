@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 $title = 'Channel';
+$currentPage = 'channels';
 require_once __DIR__ . '/_top.php';
 
 $pdo = db();
@@ -220,7 +221,7 @@ $best = $rows[0] ?? null;
 	}
 
 	div#logo_holder {
-		background: #a0a0a0;
+		background-color: var(--logo-background);
 		border-radius: 12px;
 	}
 </style>

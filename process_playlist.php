@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 $title = 'Process Playlist';
+$currentPage = 'playlist';
 require_once __DIR__ . '/_top.php';
 
 // Flash message (POST→redirect→GET)

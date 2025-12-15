@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 $title = 'Dashboard';
+$currentPage = 'dashboard';
 require_once __DIR__ . '/_top.php';
 
 $pdo = db();
@@ -48,14 +49,46 @@ function fmt_rel($rel): string
 	return number_format((float)$rel, 1) . '%';
 }
 
-$counts = [
-	'Channels' => (int)$pdo->query("SELECT COUNT(*) FROM channels")->fetchColumn(),
-	'Feeds' => (int)$pdo->query("SELECT COUNT(*) FROM feeds")->fetchColumn(),
-	'In Queue' => (int)$pdo->query("SELECT COUNT(*) FROM feed_check_queue WHERE next_run_at <= NOW() AND locked_at IS NULL")->fetchColumn(),
-	'Locked' => (int)$pdo->query("SELECT COUNT(*) FROM feed_check_queue WHERE locked_at IS NOT NULL")->fetchColumn(),
-	'OK Feeds' => (int)$pdo->query("SELECT COUNT(*) FROM feeds WHERE last_ok=1")->fetchColumn(),
-	'Failed Feeds' => (int)$pdo->query("SELECT COUNT(*) FROM feeds WHERE last_ok=0")->fetchColumn(),
+// Define stats with icons and colors
+$stats = [
+	[
+		'label' => 'Channels',
+		'value' => (int)$pdo->query("SELECT COUNT(*) FROM channels")->fetchColumn(),
+		'icon' => 'fa-tv',
+		'color' => 'primary'
+	],
+	[
+		'label' => 'Feeds',
+		'value' => (int)$pdo->query("SELECT COUNT(*) FROM feeds")->fetchColumn(),
+		'icon' => 'fa-signal',
+		'color' => 'info'
+	],
+	[
+		'label' => 'In Queue',
+		'value' => (int)$pdo->query("SELECT COUNT(*) FROM feed_check_queue WHERE next_run_at <= NOW() AND locked_at IS NULL")->fetchColumn(),
+		'icon' => 'fa-clock',
+		'color' => 'warning'
+	],
+	[
+		'label' => 'Locked',
+		'value' => (int)$pdo->query("SELECT COUNT(*) FROM feed_check_queue WHERE locked_at IS NOT NULL")->fetchColumn(),
+		'icon' => 'fa-lock',
+		'color' => 'secondary'
+	],
+	[
+		'label' => 'OK Feeds',
+		'value' => (int)$pdo->query("SELECT COUNT(*) FROM feeds WHERE last_ok=1")->fetchColumn(),
+		'icon' => 'fa-circle-check',
+		'color' => 'success'
+	],
+	[
+		'label' => 'Failed Feeds',
+		'value' => (int)$pdo->query("SELECT COUNT(*) FROM feeds WHERE last_ok=0")->fetchColumn(),
+		'icon' => 'fa-circle-xmark',
+		'color' => 'danger'
+	],
 ];
+
 
 /**
  * Recent checks (add channel_id + reliability_score)
@@ -84,6 +117,107 @@ $recent = $pdo->query("
 	.dataTables_wrapper {
 		padding: 10pt;
 	}
+
+	/* Dashboard stat cards */
+	.stat-card {
+		transition: transform 0.2s ease, box-shadow 0.2s ease;
+		height: 100%;
+	}
+
+	.stat-card:hover {
+		transform: translateY(-2px);
+		box-shadow: 0 0.5rem 1rem var(--shadow) !important;
+	}
+
+	.stat-icon {
+		font-size: 2rem;
+		opacity: 0.6;
+		/* Increased from 0.3 */
+		transition: opacity 0.2s ease;
+	}
+
+	.stat-card:hover .stat-icon {
+		opacity: 1;
+		/* Full opacity on hover */
+	}
+
+	.stat-value {
+		font-size: 1.75rem;
+		font-weight: 700;
+		line-height: 1;
+		margin: 0.5rem 0;
+	}
+
+	.stat-label {
+		font-size: 0.875rem;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+		font-weight: 500;
+	}
+
+	/* Responsive adjustments */
+	@media (max-width: 768px) {
+		.stat-value {
+			font-size: 1.5rem;
+		}
+
+		.stat-icon {
+			font-size: 1.5rem;
+		}
+
+		.stat-label {
+			font-size: 0.75rem;
+		}
+	}
+
+	/* Color variants for icons - much more visible */
+	.text-primary-muted {
+		color: rgba(13, 110, 253, 0.6);
+	}
+
+	.text-info-muted {
+		color: rgba(13, 202, 240, 0.6);
+	}
+
+	.text-warning-muted {
+		color: rgba(255, 193, 7, 0.7);
+	}
+
+	.text-secondary-muted {
+		color: rgba(108, 117, 125, 0.6);
+	}
+
+	.text-success-muted {
+		color: rgba(25, 135, 84, 0.6);
+	}
+
+	.text-danger-muted {
+		color: rgba(220, 53, 69, 0.6);
+	}
+
+	[data-bs-theme="dark"] .text-primary-muted {
+		color: rgba(110, 168, 254, 0.7);
+	}
+
+	[data-bs-theme="dark"] .text-info-muted {
+		color: rgba(13, 202, 240, 0.7);
+	}
+
+	[data-bs-theme="dark"] .text-warning-muted {
+		color: rgba(255, 193, 7, 0.8);
+	}
+
+	[data-bs-theme="dark"] .text-secondary-muted {
+		color: rgba(173, 181, 189, 0.7);
+	}
+
+	[data-bs-theme="dark"] .text-success-muted {
+		color: rgba(25, 135, 84, 0.7);
+	}
+
+	[data-bs-theme="dark"] .text-danger-muted {
+		color: rgba(220, 53, 69, 0.7);
+	}
 </style>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.10/css/dataTables.bootstrap5.min.css">
@@ -92,12 +226,17 @@ $recent = $pdo->query("
 <script src="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.10/js/dataTables.bootstrap5.min.js"></script>
 
 <div class="row g-3 mb-4">
-	<?php foreach ($counts as $label => $val): ?>
-		<div class="col-6 col-lg-2">
-			<div class="card shadow-sm">
-				<div class="card-body">
-					<div class="text-muted small"><?= h($label) ?></div>
-					<div class="fs-4 fw-semibold"><?= number_format($val) ?></div>
+	<?php foreach ($stats as $stat): ?>
+		<div class="col-6 col-md-4 col-lg-2">
+			<div class="card stat-card shadow-sm">
+				<div class="card-body text-center">
+					<div class="d-flex justify-content-between align-items-start mb-2">
+						<span class="stat-label text-<?= $stat['color'] ?>"><?= h($stat['label']) ?></span>
+						<i class="fa-solid <?= $stat['icon'] ?> stat-icon text-<?= $stat['color'] ?>-muted"></i>
+					</div>
+					<div class="stat-value text-<?= $stat['color'] ?>">
+						<?= number_format($stat['value']) ?>
+					</div>
 				</div>
 			</div>
 		</div>
@@ -202,7 +341,7 @@ $recent = $pdo->query("
 				[10, 25, 50, 100]
 			],
 			info: true,
-			searching: true,
+			searching: false,
 			order: [
 				[8, 'desc'], // status_rank
 				[9, 'desc'], // class_rank

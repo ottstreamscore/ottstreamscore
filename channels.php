@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 $title = 'Channels';
+$currentPage = 'channels';
 require_once __DIR__ . '/_top.php';
 
 $pdo = db();

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 
 $title = 'Feeds';
+$currentPage = 'feeds';
 require_once __DIR__ . '/_top.php';
 
 $pdo = db();
@@ -114,7 +115,7 @@ $group = h((string)($_GET['group'] ?? ''));
 				</div>
 
 				<div class="text-muted small mt-3">
-					DataTables will search/sort across <strong>all records</strong>.
+					Searches/sorts across all records.
 				</div>
 			</div>
 		</div>

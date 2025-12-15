@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 $title = 'Reports';
+$currentPage = 'reports';
 require_once __DIR__ . '/_top.php';
 
 $pdo = db();
@@ -81,7 +82,7 @@ $groups = $pdo->query("
 				<div class="fw-semibold">Feed Report</div>
 
 				<div class="d-flex flex-wrap gap-2">
-					<button class="btn btn-outline-dark btn-sm quick-filter" data-quick="top">Top Channels</button>
+					<button class="btn btn-outline-success btn-sm quick-filter" data-quick="top">Top Channels</button>
 					<button class="btn btn-outline-danger btn-sm quick-filter" data-quick="dead">Dead Channels</button>
 					<button class="btn btn-outline-warning btn-sm quick-filter" data-quick="unstable">Unstable</button>
 					<button class="btn btn-outline-secondary btn-sm quick-filter" data-quick="unknown">Never Checked</button>
@@ -96,7 +97,7 @@ $groups = $pdo->query("
 						<tr>
 							<th>Group</th>
 							<th>Channel</th>
-							<th class="text-muted">EPG ID</th>
+							<th>EPG ID</th>
 							<th>Status</th>
 							<th>Quality</th>
 							<th>Res</th>
