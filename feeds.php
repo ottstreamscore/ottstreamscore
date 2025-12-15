@@ -22,10 +22,6 @@ $groups = $pdo->query("
 $q     = h((string)($_GET['q'] ?? ''));
 $group = h((string)($_GET['group'] ?? ''));
 ?>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.10/css/dataTables.bootstrap5.min.css">
-<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/datatables.net@1.13.10/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.10/js/dataTables.bootstrap5.min.js"></script>
 
 <style>
 	div.dataTables_filter {
@@ -41,7 +37,7 @@ $group = h((string)($_GET['group'] ?? ''));
 	<!-- Sidebar -->
 	<div class="col-lg-3">
 		<div class="card shadow-sm">
-			<div class="card-header fw-semibold">Filters</div>
+			<div class="card-header fw-semibold"><i class="fa-solid fa-filter me-1"></i> Filters</div>
 			<div class="card-body">
 
 				<label class="form-label small text-muted mb-1">Search (tvg-name or tvg-id)</label>
@@ -125,7 +121,7 @@ $group = h((string)($_GET['group'] ?? ''));
 	<div class="col-lg-9">
 		<div class="card shadow-sm">
 			<div class="card-header d-flex justify-content-between align-items-center">
-				<div class="fw-semibold">Feeds</div>
+				<div class="fw-semibold"><i class="fa-solid fa-tower-broadcast me-1"></i> Feeds</div>
 			</div>
 
 			<div class="table-responsive">
@@ -140,6 +136,7 @@ $group = h((string)($_GET['group'] ?? ''));
 							<th>Codec</th>
 							<th>Checked</th>
 							<th>File</th>
+							<th>History</th>
 							<th style="display:none;">status_rank</th>
 							<th style="display:none;">res_rank</th>
 							<th style="display:none;">checked_ts</th>
@@ -222,6 +219,10 @@ $group = h((string)($_GET['group'] ?? ''));
 					data: 'file'
 				},
 				{
+					data: 'history',
+					orderable: false
+				},
+				{
 					data: 'status_rank',
 					visible: false
 				},
@@ -235,10 +236,10 @@ $group = h((string)($_GET['group'] ?? ''));
 				}
 			],
 			order: [
-				[8, 'desc'], // status_rank
-				[9, 'desc'], // res_rank
+				[9, 'desc'], // status_rank
+				[10, 'desc'], // res_rank
 				[4, 'desc'], // fps
-				[10, 'desc'] // checked_ts
+				[11, 'desc'] // checked_ts
 			],
 			language: {
 				emptyTable: "No feeds matched your filters.",

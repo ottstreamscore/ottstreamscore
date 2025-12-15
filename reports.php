@@ -28,10 +28,6 @@ $groups = $pdo->query("
   ORDER BY group_title
 ")->fetchAll();
 ?>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.10/css/dataTables.bootstrap5.min.css">
-<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/datatables.net@1.13.10/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.10/js/dataTables.bootstrap5.min.js"></script>
 
 <style>
 	div.dataTables_filter {
@@ -50,7 +46,7 @@ $groups = $pdo->query("
 <div class="row g-3">
 	<div class="col-lg-3">
 		<div class="card shadow-sm">
-			<div class="card-header fw-semibold">Report Filters</div>
+			<div class="card-header fw-semibold"><i class="fa-solid fa-filter me-1"></i> Filters</div>
 			<div class="card-body">
 
 				<label class="form-label small text-muted mb-1">Search (Channel name or EPG ID)</label>
@@ -79,7 +75,7 @@ $groups = $pdo->query("
 	<div class="col-lg-9">
 		<div class="card shadow-sm">
 			<div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
-				<div class="fw-semibold">Feed Report</div>
+				<div class="fw-semibold"><i class="fa-solid fa-ranking-star me-1"></i> Feed Report</div>
 
 				<div class="d-flex flex-wrap gap-2">
 					<button class="btn btn-outline-success btn-sm quick-filter" data-quick="top">Top Channels</button>

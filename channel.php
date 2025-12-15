@@ -210,11 +210,6 @@ $displayLogo = (string)($clicked['tvg_logo'] ?? '');
 $best = $rows[0] ?? null;
 ?>
 
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.10/css/dataTables.bootstrap5.min.css">
-<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/datatables.net@1.13.10/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.10/js/dataTables.bootstrap5.min.js"></script>
-
 <style>
 	div#tvgTable_wrapper {
 		padding: 10pt;
@@ -239,7 +234,7 @@ $best = $rows[0] ?? null;
 		<div id="logo_holder">
 			<img src="<?= h($displayLogo) ?>"
 				alt=""
-				style="height:54px;max-width:180px;object-fit:contain;border-radius:12px;padding:10px;"
+				style="height:70px;width:auto;object-fit:contain;border-radius:12px;padding:10px;"
 				loading="lazy">
 		</div>
 	<?php endif; ?>
@@ -287,6 +282,7 @@ $best = $rows[0] ?? null;
 					<th class="text-end">Score</th>
 					<th>Checked</th>
 					<th>File</th>
+					<th>History</th>
 				</tr>
 			</thead>
 			<tbody>
@@ -338,6 +334,13 @@ $best = $rows[0] ?? null;
 
 						<td><?= fmt_dt($r['last_checked_at'] ? (string)$r['last_checked_at'] : null) ?></td>
 						<td class="text-muted small"><?= h($file) ?></td>
+						<td>
+							<a href="feed_history.php?feed_id=<?= (int)$r['feed_id'] ?>"
+								class="btn btn-sm btn-outline-primary"
+								title="View check history">
+								<i class="bi bi-clock-history"></i> View
+							</a>
+						</td>
 					</tr>
 				<?php endforeach; ?>
 			</tbody>

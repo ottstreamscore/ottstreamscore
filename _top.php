@@ -12,6 +12,10 @@ require_once __DIR__ . '/_boot.php';
 	<title><?= h($title ?? 'OTT Stream Tester (Admin)') ?></title>
 	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
 	<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.10/css/dataTables.bootstrap5.min.css">
+	<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+	<script src="https://cdn.jsdelivr.net/npm/datatables.net@1.13.10/js/jquery.dataTables.min.js"></script>
+	<script src="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.10/js/dataTables.bootstrap5.min.js"></script>
 
 	<script>
 		// Apply saved theme 
@@ -246,27 +250,27 @@ require_once __DIR__ . '/_boot.php';
 				<ul class="navbar-nav ms-auto">
 					<li class="nav-item">
 						<a class="nav-link <?= ($currentPage ?? '') === 'dashboard' ? 'active' : '' ?>" href="index.php">
-							<i class="fa-solid fa-gauge me-2"></i> Dashboard
+							<i class="fa-solid fa-gauge me-1"></i> Dashboard
 						</a>
 					</li>
 					<li class="nav-item">
 						<a class="nav-link <?= ($currentPage ?? '') === 'channels' ? 'active' : '' ?>" href="channels.php">
-							<i class="fa-solid fa-tv me-2"></i> Channels
+							<i class="fa-solid fa-tv me-1"></i> Channels
 						</a>
 					</li>
 					<li class="nav-item">
 						<a class="nav-link <?= ($currentPage ?? '') === 'feeds' ? 'active' : '' ?>" href="feeds.php">
-							<i class="fa-solid fa-broadcast-tower me-2"></i> Feeds
+							<i class="fa-solid fa-broadcast-tower me-1"></i> Feeds
 						</a>
 					</li>
 					<li class="nav-item">
 						<a class="nav-link <?= ($currentPage ?? '') === 'reports' ? 'active' : '' ?>" href="reports.php">
-							<i class="fa-solid fa-ranking-star me-2"></i> Reports
+							<i class="fa-solid fa-ranking-star me-1"></i> Reports
 						</a>
 					</li>
 					<li class="nav-item">
 						<a class="nav-link <?= ($currentPage ?? '') === 'playlist' ? 'active' : '' ?>" href="process_playlist.php">
-							<i class="fa-solid fa-file-import me-2"></i> Import Playlist
+							<i class="fa-solid fa-file-import me-1"></i> Import Playlist
 						</a>
 					</li>
 				</ul>

@@ -220,10 +220,6 @@ $recent = $pdo->query("
 	}
 </style>
 
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.10/css/dataTables.bootstrap5.min.css">
-<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/datatables.net@1.13.10/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.10/js/dataTables.bootstrap5.min.js"></script>
 
 <div class="row g-3 mb-4">
 	<?php foreach ($stats as $stat): ?>
@@ -244,7 +240,7 @@ $recent = $pdo->query("
 </div>
 
 <div class="card shadow-sm">
-	<div class="card-header fw-semibold">Recent Feed Checks</div>
+	<div class="card-header fw-semibold"><i class="fa-regular fa-clock me-1"></i> Recent Feed Checks</div>
 	<div class="table-responsive">
 		<table id="recentChecks" class="table table-sm table-striped table-hover mb-0 align-middle">
 			<thead>

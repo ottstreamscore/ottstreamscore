@@ -63,7 +63,7 @@ function file_label(string $path): string
 <?php endif; ?>
 
 <div class="card shadow-sm">
-	<div class="card-header fw-semibold">Run a sync</div>
+	<div class="card-header fw-semibold"><i class="fa-solid fa-file-import me-1"></i> Run a sync</div>
 	<div class="card-body">
 
 		<?php if (!$files): ?>

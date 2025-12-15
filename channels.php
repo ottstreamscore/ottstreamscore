@@ -26,11 +26,6 @@ $groups = $pdo->query("
 ")->fetchAll(PDO::FETCH_COLUMN);
 ?>
 
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.10/css/dataTables.bootstrap5.min.css">
-<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/datatables.net@1.13.10/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.10/js/dataTables.bootstrap5.min.js"></script>
-
 <style>
 	/* Hide default DT search box (you use sidebar filters) */
 	div.dataTables_filter {
@@ -45,7 +40,7 @@ $groups = $pdo->query("
 <div class="row g-3">
 	<div class="col-lg-3">
 		<div class="card shadow-sm">
-			<div class="card-header fw-semibold">Filters</div>
+			<div class="card-header fw-semibold"><i class="fa-solid fa-filter me-1"></i> Filters</div>
 			<div class="card-body">
 
 				<label class="form-label small text-muted mb-1">Search (tvg-name or tvg-id)</label>
@@ -74,7 +69,7 @@ $groups = $pdo->query("
 
 	<div class="col-lg-9">
 		<div class="card shadow-sm">
-			<div class="card-header fw-semibold">Channels</div>
+			<div class="card-header fw-semibold"><i class="fa-solid fa-tv me-1"></i> Channels</div>
 			<div class="table-responsive">
 				<table id="channelsTable" class="table table-striped table-hover mb-0 align-middle">
 					<thead>
