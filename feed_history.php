@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 $title = 'Feed Check History';
 $currentPage = 'feeds';
-require_once __DIR__ . '/_top.php';
+require_once __DIR__ . '/_boot.php';
 
+// require login authorization
+require_auth();
+
+require_once __DIR__ . '/_top.php';
 $pdo = db();
 
 $feedId = (int)q('feed_id', '0');

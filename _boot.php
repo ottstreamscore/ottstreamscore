@@ -3,12 +3,13 @@
 declare(strict_types=1);
 
 /**
- * OTT Admin bootstrap
+ * OTT Stream Score Admin bootstrap
  * Uses existing db.php in SAME directory
  */
 
-require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/auth.php';
+
 
 if (!function_exists('h')) {
 	function h(string $s): string

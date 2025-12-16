@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 $title = 'Dashboard';
 $currentPage = 'dashboard';
+require_once __DIR__ . '/_boot.php';
+
+// require login authorization
+require_auth();
+
 require_once __DIR__ . '/_top.php';
 
 $pdo = db();

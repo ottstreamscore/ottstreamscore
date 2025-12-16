@@ -1,9 +1,11 @@
 <?php
 
 declare(strict_types=1);
-require __DIR__ . '/config.php';
 require __DIR__ . '/db.php';
 
+ini_set('display_errors', '0');           // Don't show errors on screen
+ini_set('log_errors', '1');               // Enable error logging
+error_reporting(E_ALL);                   // Report all errors
 
 function uuidv4(): string
 {

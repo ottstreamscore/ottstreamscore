@@ -1,7 +1,6 @@
 <?php
 
 declare(strict_types=1);
-require_once __DIR__ . '/_boot.php';
 ?>
 <!doctype html>
 <html lang="en">
@@ -9,7 +8,7 @@ require_once __DIR__ . '/_boot.php';
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<title><?= h($title ?? 'OTT Stream Tester (Admin)') ?></title>
+	<title><?= h($title ?? 'OTT Stream Tester') ?></title>
 	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
 	<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.10/css/dataTables.bootstrap5.min.css">
@@ -20,7 +19,7 @@ require_once __DIR__ . '/_boot.php';
 	<script>
 		// Apply saved theme 
 		(function() {
-			const savedTheme = localStorage.getItem('theme') || 'light';
+			const savedTheme = localStorage.getItem('theme') || 'dark';
 			document.documentElement.setAttribute('data-bs-theme', savedTheme);
 		})();
 	</script>
@@ -233,6 +232,41 @@ require_once __DIR__ . '/_boot.php';
 			background: var(--bg-secondary);
 			border-radius: 12px;
 		}
+
+		/* User dropdown styling */
+		.dropdown-menu {
+			background-color: var(--bg-card);
+			border-color: var(--border-color);
+		}
+
+		.dropdown-item {
+			color: var(--text-primary);
+		}
+
+		.dropdown-item:hover {
+			background-color: var(--table-hover);
+			color: var(--text-primary);
+		}
+
+		.dropdown-divider {
+			border-color: var(--border-color);
+		}
+
+		.theme-label-dark {
+			display: none;
+		}
+
+		.theme-label-light {
+			display: inline;
+		}
+
+		[data-bs-theme="dark"] .theme-label-dark {
+			display: inline;
+		}
+
+		[data-bs-theme="dark"] .theme-label-light {
+			display: none;
+		}
 	</style>
 
 </head>
@@ -246,7 +280,6 @@ require_once __DIR__ . '/_boot.php';
 				<span class="navbar-toggler-icon"></span>
 			</button>
 			<div class="collapse navbar-collapse" id="navbarNav">
-				<!-- Changed me-auto to ms-auto to align right -->
 				<ul class="navbar-nav ms-auto">
 					<li class="nav-item">
 						<a class="nav-link <?= ($currentPage ?? '') === 'dashboard' ? 'active' : '' ?>" href="index.php">
@@ -269,17 +302,35 @@ require_once __DIR__ . '/_boot.php';
 						</a>
 					</li>
 					<li class="nav-item">
-						<a class="nav-link <?= ($currentPage ?? '') === 'playlist' ? 'active' : '' ?>" href="process_playlist.php">
-							<i class="fa-solid fa-file-import me-1"></i> Import Playlist
+						<a class="nav-link <?= ($currentPage ?? '') === 'admin' ? 'active' : '' ?>" href="admin.php">
+							<i class="fa-solid fa-gear me-1"></i> Admin
 						</a>
 					</li>
-				</ul>
 
-				<!-- Theme toggle button -->
-				<button id="theme-toggle" class="btn btn-sm btn-outline-light ms-2" type="button">
-					<span class="theme-icon-dark">🌙</span>
-					<span class="theme-icon-light">☀️</span>
-				</button>
+					<!-- User Dropdown -->
+					<li class="nav-item dropdown">
+						<a style="color:#20c6c0;" class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+							<i class="fa-solid fa-user-circle me-1"></i> <?= h(get_username() ?? 'User') ?>
+						</a>
+						<ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
+							<li>
+								<a class="dropdown-item" href="#" id="theme-toggle-link">
+									<i class="fa-solid fa-circle-half-stroke me-2"></i>
+									<span class="theme-label-dark">Switch to Light Mode</span>
+									<span class="theme-label-light">Switch to Dark Mode</span>
+								</a>
+							</li>
+							<li>
+								<hr class="dropdown-divider">
+							</li>
+							<li>
+								<a class="dropdown-item text-danger" href="logout.php">
+									<i class="fa-solid fa-right-from-bracket me-2"></i> Logout
+								</a>
+							</li>
+						</ul>
+					</li>
+				</ul>
 			</div>
 		</div>
 	</nav>
