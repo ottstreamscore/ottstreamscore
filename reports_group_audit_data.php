@@ -130,13 +130,13 @@ try {
 	// === GET ALL UNIQUE TVG_IDS IN THIS GROUP ===
 	$tvgIds = [];
 	$st = $pdo->prepare("
-		SELECT DISTINCT c.tvg_id, c.tvg_name, c.tvg_logo
-		FROM channels c
-		WHERE c.group_title = :group
-		AND c.tvg_id IS NOT NULL
-		AND c.tvg_id <> ''
-		ORDER BY c.tvg_name
-	");
+	SELECT DISTINCT c.tvg_id, c.tvg_name, c.tvg_logo
+	FROM channels c
+	WHERE c.group_title = :group
+	  AND c.tvg_id IS NOT NULL
+	  AND c.tvg_id <> ''
+	ORDER BY c.tvg_name
+");
 	$st->execute([':group' => $group]);
 	$channelsInGroup = $st->fetchAll(PDO::FETCH_ASSOC);
 
@@ -151,59 +151,59 @@ try {
 		// Get best feed in current group based on HISTORICAL data
 		if ($hasJunctionTable) {
 			$feedQuery = "
-				SELECT 
-					f.id AS feed_id,
-					c.group_title,
-					AVG(CASE WHEN fc.ok = 1 THEN 100 ELSE 0 END) AS avg_reliability,
-					AVG(fc.w) AS avg_w,
-					AVG(fc.h) AS avg_h,
-					AVG(fc.fps) AS avg_fps,
-					MAX(fc.checked_at) AS last_checked,
-					COUNT(fc.id) AS check_count,
-					f.last_ok,
-					f.reliability_score,
-					f.last_w,
-					f.last_h,
-					f.last_fps,
-					f.last_codec
-				FROM channels c
-				JOIN channel_feeds cf ON cf.channel_id = c.id
-				JOIN feeds f ON f.id = cf.feed_id
-				LEFT JOIN feed_checks fc ON fc.feed_id = f.id {$dateFilter}
-				WHERE c.tvg_id = :tvg_id
-				AND c.group_title = :group
-				GROUP BY f.id, c.group_title, f.last_ok, f.reliability_score, f.last_w, f.last_h, f.last_fps, f.last_codec
-				HAVING check_count > 0
-				ORDER BY avg_reliability DESC, avg_w DESC, avg_h DESC, avg_fps DESC
-				LIMIT 1
-			";
+			SELECT 
+				f.id AS feed_id,
+				c.group_title,
+				AVG(CASE WHEN fc.ok = 1 THEN 100 ELSE 0 END) AS avg_reliability,
+				AVG(fc.w) AS avg_w,
+				AVG(fc.h) AS avg_h,
+				AVG(fc.fps) AS avg_fps,
+				MAX(fc.checked_at) AS last_checked,
+				COUNT(fc.id) AS check_count,
+				f.last_ok,
+				f.reliability_score,
+				f.last_w,
+				f.last_h,
+				f.last_fps,
+				f.last_codec
+			FROM channels c
+			JOIN channel_feeds cf ON cf.channel_id = c.id
+			JOIN feeds f ON f.id = cf.feed_id
+			LEFT JOIN feed_checks fc ON fc.feed_id = f.id {$dateFilter}
+			WHERE c.tvg_id = :tvg_id
+			  AND c.group_title = :group
+			GROUP BY f.id, c.group_title, f.last_ok, f.reliability_score, f.last_w, f.last_h, f.last_fps, f.last_codec
+			HAVING check_count > 0
+			ORDER BY avg_reliability DESC, avg_w DESC, avg_h DESC, avg_fps DESC
+			LIMIT 1
+		";
 		} else {
 			$feedQuery = "
-				SELECT 
-					f.id AS feed_id,
-					c.group_title,
-					AVG(CASE WHEN fc.ok = 1 THEN 100 ELSE 0 END) AS avg_reliability,
-					AVG(fc.w) AS avg_w,
-					AVG(fc.h) AS avg_h,
-					AVG(fc.fps) AS avg_fps,
-					MAX(fc.checked_at) AS last_checked,
-					COUNT(fc.id) AS check_count,
-					f.last_ok,
-					f.reliability_score,
-					f.last_w,
-					f.last_h,
-					f.last_fps,
-					f.last_codec
-				FROM channels c
-				JOIN feeds f ON f.channel_id = c.id
-				LEFT JOIN feed_checks fc ON fc.feed_id = f.id {$dateFilter}
-				WHERE c.tvg_id = :tvg_id
-				AND c.group_title = :group
-				GROUP BY f.id, c.group_title, f.last_ok, f.reliability_score, f.last_w, f.last_h, f.last_fps, f.last_codec
-				HAVING check_count > 0
-				ORDER BY avg_reliability DESC, avg_w DESC, avg_h DESC, avg_fps DESC
-				LIMIT 1
-			";
+			SELECT 
+				f.id AS feed_id,
+				c.group_title,
+				AVG(CASE WHEN fc.ok = 1 THEN 100 ELSE 0 END) AS avg_reliability,
+				AVG(fc.w) AS avg_w,
+				AVG(fc.h) AS avg_h,
+				AVG(fc.fps) AS avg_fps,
+				MAX(fc.checked_at) AS last_checked,
+				COUNT(fc.id) AS check_count,
+				f.last_ok,
+				f.reliability_score,
+				f.last_w,
+				f.last_h,
+				f.last_fps,
+				f.last_codec
+			FROM channels c
+			JOIN feeds f ON f.channel_id = c.id
+			LEFT JOIN feed_checks fc ON fc.feed_id = f.id {$dateFilter}
+			WHERE c.tvg_id = :tvg_id
+			  AND c.group_title = :group
+			GROUP BY f.id, c.group_title, f.last_ok, f.reliability_score, f.last_w, f.last_h, f.last_fps, f.last_codec
+			HAVING check_count > 0
+			ORDER BY avg_reliability DESC, avg_w DESC, avg_h DESC, avg_fps DESC
+			LIMIT 1
+		";
 		}
 
 		$params = array_merge([':tvg_id' => $tvgId, ':group' => $group], $dateParams);
@@ -323,7 +323,7 @@ try {
 					'reliability' => round((float)$feed['avg_reliability'], 1),
 					'resolution' => res_class((int)$feed['avg_w'], (int)$feed['avg_h']),
 					'res_display' => round((float)$feed['avg_w']) . '×' . round((float)$feed['avg_h']),
-					'fps' => round((float)$feed['avg_fps'], 1),
+					'fps' => round((float)$feed['avg_fps'], 2),
 					'check_count' => $feed['check_count'],
 					'last_checked' => $feed['last_checked']
 				];
@@ -356,7 +356,7 @@ try {
 			'current_reliability' => $currentBest ? round((float)$currentBest['avg_reliability'], 1) : null,
 			'current_resolution' => $currentBest ? res_class((int)$currentBest['avg_w'], (int)$currentBest['avg_h']) : null,
 			'current_res_display' => $currentBest ? round((float)$currentBest['avg_w']) . '×' . round((float)$currentBest['avg_h']) : null,
-			'current_fps' => $currentBest ? round((float)$currentBest['avg_fps'], 1) : null,
+			'current_fps' => $currentBest ? round((float)$currentBest['avg_fps'], 2) : null,
 			'current_check_count' => $currentBest ? $currentBest['check_count'] : 0,
 			'alternatives' => $alternatives
 		];
