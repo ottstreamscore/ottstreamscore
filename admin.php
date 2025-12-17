@@ -165,12 +165,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			case 'create_user':
 				$new_username = $_POST['new_username'] ?? '';
 				$new_password = $_POST['new_password'] ?? '';
+				$new_password_confirm = $_POST['new_password_confirm'] ?? '';
 				$new_email = $_POST['new_email'] ?? '';
 
 				if (empty($new_username) || empty($new_password)) {
 					$error = 'Username and password are required';
+				} elseif ($new_password !== $new_password_confirm) {
+					$error = 'Passwords do not match';
 				} elseif (strlen($new_password) < 8) {
 					$error = 'Password must be at least 8 characters';
+				} elseif (!validate_username($new_username)) {
+					$error = 'Username must be 3-50 characters and contain only letters, numbers, underscores, or dashes';
 				} else {
 					try {
 						// Check if username already exists
@@ -186,6 +191,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 						}
 					} catch (Exception $e) {
 						$error = 'Failed to create user: ' . $e->getMessage();
+					}
+				}
+				$tab = 'users';
+				break;
+
+			case 'reset_lockout':
+				$username = $_POST['username'] ?? '';
+				if (empty($username)) {
+					$error = 'Username is required';
+				} else {
+					try {
+						// Delete failed login attempts for this username
+						$stmt = $pdo->prepare("DELETE FROM login_attempts WHERE username = ? AND success = 0");
+						$stmt->execute([$username]);
+						$deleted = $stmt->rowCount();
+						$success = "Reset lockout for '$username' - cleared $deleted failed attempt(s)";
+					} catch (Exception $e) {
+						$error = 'Failed to reset lockout: ' . $e->getMessage();
+					}
+				}
+				$tab = 'users';
+				break;
+
+			case 'delete_user':
+				$user_id = (int)($_POST['user_id'] ?? 0);
+				$current_user_id = get_user_id();
+
+				if ($user_id === $current_user_id) {
+					$error = 'Cannot delete your own account';
+				} elseif ($user_id <= 0) {
+					$error = 'Invalid user ID';
+				} else {
+					try {
+						// Get the first user created (by lowest ID or earliest created_at)
+						$first_user_stmt = $pdo->query("SELECT id FROM users ORDER BY id ASC LIMIT 1");
+						$first_user = $first_user_stmt->fetch();
+						$first_user_id = $first_user['id'] ?? null;
+
+						if ($user_id === $first_user_id) {
+							$error = 'Cannot delete the primary user account created';
+						} else {
+							// Get username for confirmation message
+							$stmt = $pdo->prepare("SELECT username FROM users WHERE id = ?");
+							$stmt->execute([$user_id]);
+							$user = $stmt->fetch();
+
+							if ($user) {
+								// Delete user
+								$stmt = $pdo->prepare("DELETE FROM users WHERE id = ?");
+								$stmt->execute([$user_id]);
+								$success = "User '{$user['username']}' deleted successfully";
+							} else {
+								$error = 'User not found';
+							}
+						}
+					} catch (Exception $e) {
+						$error = 'Failed to delete user: ' . $e->getMessage();
 					}
 				}
 				$tab = 'users';
@@ -526,6 +588,9 @@ if (file_exists($bootstrap_file)) {
 			<a href="admin.php?tab=creds" class="tab-link <?php echo $tab === 'creds' ? 'active' : ''; ?>">
 				Update Stream Credentials
 			</a>
+			<a href="admin.php?tab=users" class="tab-link <?php echo $tab === 'users' ? 'active' : ''; ?>">
+				User Management
+			</a>
 			<a href="admin.php?tab=database" class="tab-link <?php echo $tab === 'database' ? 'active' : ''; ?>">
 				Database
 			</a>
@@ -778,7 +843,7 @@ if (file_exists($bootstrap_file)) {
 					</div>
 				</div>
 
-				<div class="alert alert-warning">🔒 Important: Do not store playlists web accessible directory. Playlists contain sensitive URLs and <strong>should not</strong> be publicly accessible via browser.</div>
+				<div class="alert alert-warning">🔒 Important: Do not store playlists in web accessible directories. Playlists contain sensitive URLs and <strong>should not</strong> be accessible via browser.</div>
 
 				<?php if ($flash): ?>
 					<div class="alert alert-<?= h($flash['ok'] ? 'success' : 'danger') ?> shadow-sm">
@@ -919,6 +984,256 @@ if (file_exists($bootstrap_file)) {
 						<button type="submit" class="btn btn-md btn-outline-primary">Rotate Credentials</button>
 					</div>
 				</form>
+
+			<?php elseif ($tab === 'users'): ?>
+				<h2 class="admin_section"><i class="fa-solid fa-users me-1"></i> User Management</h2>
+
+				<?php
+				// Get all users with their failed login attempt counts
+				$pdo = get_db_connection();
+
+				// Get first user ID
+				$first_user_stmt = $pdo->query("SELECT id FROM users ORDER BY id ASC LIMIT 1");
+				$first_user = $first_user_stmt->fetch();
+				$first_user_id = $first_user['id'] ?? null;
+
+				$stmt = $pdo->query("
+					SELECT 
+						u.id,
+						u.username,
+						u.last_login,
+						u.created_at,
+						COALESCE(
+							(SELECT COUNT(*) 
+							 FROM login_attempts la 
+							 WHERE la.username = u.username 
+							 AND la.success = 0 
+							 AND la.attempted_at > DATE_SUB(NOW(), INTERVAL 15 MINUTE)
+							), 0
+						) as failed_attempts
+					FROM users u
+					ORDER BY u.id ASC
+				");
+				$users = $stmt->fetchAll();
+				$current_user_id = get_user_id();
+				?>
+
+				<!-- User List -->
+				<div class="card mb-4">
+					<div class="card-header fw-semibold">
+						<i class="fa-solid fa-list me-1"></i> All Users
+					</div>
+					<div class="card-body">
+						<?php if (count($users) === 0): ?>
+							<div class="alert alert-info">No users found.</div>
+						<?php else: ?>
+							<div class="table-responsive">
+								<table class="table table-hover">
+									<thead>
+										<tr>
+											<th>Username</th>
+											<th>Last Login</th>
+											<th>Invalid Login Attempts</th>
+											<th>Actions</th>
+										</tr>
+									</thead>
+									<tbody>
+										<?php foreach ($users as $user): ?>
+											<tr>
+												<td>
+													<strong><?php echo htmlspecialchars($user['username']); ?></strong>
+													<?php if ($user['id'] == $current_user_id): ?>
+														<span class="badge bg-primary ms-1">You</span>
+													<?php endif; ?>
+													<?php if ($user['id'] == $first_user_id): ?>
+														<span class="badge bg-success ms-1">Primary User</span>
+													<?php endif; ?>
+												</td>
+												<td>
+													<?php
+													if ($user['last_login']) {
+														echo date('Y-m-d H:i:s', strtotime($user['last_login']));
+													} else {
+														echo '<span class="text-muted">Never</span>';
+													}
+													?>
+												</td>
+												<td>
+													<?php if ($user['failed_attempts'] > 0): ?>
+														<span class="badge bg-danger"><?php echo $user['failed_attempts']; ?></span>
+														<a href="#" class="ms-2 small" onclick="event.preventDefault(); document.getElementById('viewAttemptsModal-<?php echo $user['id']; ?>').style.display='block';">
+															View Log
+														</a>
+													<?php else: ?>
+														<span class="text-success">0</span>
+													<?php endif; ?>
+												</td>
+												<td>
+													<?php if ($user['failed_attempts'] > 0): ?>
+														<form method="post" action="admin.php?tab=users" style="display:inline;">
+															<input type="hidden" name="action" value="reset_lockout">
+															<input type="hidden" name="username" value="<?php echo htmlspecialchars($user['username']); ?>">
+															<?php echo csrf_field(); ?>
+															<button type="submit" class="btn btn-sm btn-warning" title="Reset Lockout">
+																<i class="fa-solid fa-unlock"></i> Reset Lockout
+															</button>
+														</form>
+													<?php endif; ?>
+
+													<?php if ($user['id'] != $current_user_id && $user['id'] != $first_user_id): ?>
+														<button type="button" class="btn btn-sm btn-danger ms-1"
+															onclick="document.getElementById('deleteModal-<?php echo $user['id']; ?>').style.display='block';"
+															title="Delete User">
+															<i class="fa-solid fa-trash"></i> Delete
+														</button>
+													<?php endif; ?>
+												</td>
+											</tr>
+										<?php endforeach; ?>
+									</tbody>
+								</table>
+							</div>
+
+							<!-- Modals (outside table structure) -->
+							<?php foreach ($users as $user): ?>
+								<!-- View Attempts Modal -->
+								<?php if ($user['failed_attempts'] > 0): ?>
+									<div id="viewAttemptsModal-<?php echo $user['id']; ?>" class="modal" style="display:none; position:fixed; z-index:1050; left:0; top:0; width:100%; height:100%; overflow:auto; background-color:rgba(0,0,0,0.4);">
+										<div class="modal-dialog" style="margin:50px auto; max-width:600px;">
+											<div class="modal-content" style="border-radius:8px; box-shadow:0 4px 6px rgba(0,0,0,0.1);">
+												<div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; padding-bottom:15px; border-bottom:1px solid #dee2e6;">
+													<h5 class="modal-title" style="margin:0;">Failed Login Attempts - <?php echo htmlspecialchars($user['username']); ?></h5>
+													<button type="button" class="btn-close" onclick="document.getElementById('viewAttemptsModal-<?php echo $user['id']; ?>').style.display='none';" style="border:none; background:none; font-size:24px; cursor:pointer;">&times;</button>
+												</div>
+												<div class="modal-body">
+													<?php
+													$attempts_stmt = $pdo->prepare("
+													SELECT ip_address, attempted_at 
+													FROM login_attempts 
+													WHERE username = ? 
+													AND success = 0 
+													AND attempted_at > DATE_SUB(NOW(), INTERVAL 15 MINUTE)
+													ORDER BY attempted_at DESC
+												");
+													$attempts_stmt->execute([$user['username']]);
+													$attempts = $attempts_stmt->fetchAll();
+													?>
+													<?php if (count($attempts) > 0): ?>
+														<table class="table table-sm">
+															<thead>
+																<tr>
+																	<th>IP Address</th>
+																	<th>Attempted At</th>
+																</tr>
+															</thead>
+															<tbody>
+																<?php foreach ($attempts as $attempt): ?>
+																	<tr>
+																		<td><?php echo htmlspecialchars($attempt['ip_address']); ?></td>
+																		<td><?php echo date('Y-m-d H:i:s', strtotime($attempt['attempted_at'])); ?></td>
+																	</tr>
+																<?php endforeach; ?>
+															</tbody>
+														</table>
+														<small class="text-muted">Showing attempts from last 15 minutes</small>
+													<?php else: ?>
+														<p>No failed attempts in the last 15 minutes.</p>
+													<?php endif; ?>
+												</div>
+												<div class="modal-footer" style="margin-top:15px; padding-top:15px; border-top:1px solid #dee2e6;">
+													<button type="button" class="btn btn-secondary" onclick="document.getElementById('viewAttemptsModal-<?php echo $user['id']; ?>').style.display='none';">Close</button>
+												</div>
+											</div>
+										</div>
+									</div>
+								<?php endif; ?>
+
+								<!-- Delete Confirmation Modal -->
+								<?php if ($user['id'] != $current_user_id && $user['id'] != $first_user_id): ?>
+									<div id="deleteModal-<?php echo $user['id']; ?>" class="modal" style="display:none; position:fixed; z-index:1050; left:0; top:0; width:100%; height:100%; overflow:auto; background-color:rgba(0,0,0,0.4);">
+										<div class="modal-dialog" style="margin:100px auto; max-width:500px;">
+											<div class="modal-content" style="border-radius:8px; box-shadow:0 4px 6px rgba(0,0,0,0.1);">
+												<div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; padding-bottom:15px; border-bottom:1px solid #dee2e6;">
+													<h5 class="modal-title" style="margin:0;">Confirm Delete</h5>
+													<button type="button" class="btn-close" onclick="document.getElementById('deleteModal-<?php echo $user['id']; ?>').style.display='none';" style="border:none; background:none; font-size:24px; cursor:pointer;">&times;</button>
+												</div>
+												<div class="modal-body">
+													<p>Are you sure you want to delete user <strong><?php echo htmlspecialchars($user['username']); ?></strong>?</p>
+													<p class="text-danger"><i class="fa-solid fa-triangle-exclamation"></i> This action cannot be undone.</p>
+												</div>
+												<div class="modal-footer" style="margin-top:15px; padding-top:15px; border-top:1px solid #dee2e6; display:flex; gap:10px; justify-content:flex-end;">
+													<button type="button" class="btn btn-secondary" onclick="document.getElementById('deleteModal-<?php echo $user['id']; ?>').style.display='none';">Cancel</button>
+													<form method="post" action="admin.php?tab=users" style="display:inline; margin:0;">
+														<input type="hidden" name="action" value="delete_user">
+														<input type="hidden" name="user_id" value="<?php echo $user['id']; ?>">
+														<?php echo csrf_field(); ?>
+														<button type="submit" class="btn btn-danger">
+															<i class="fa-solid fa-trash"></i> Delete User
+														</button>
+													</form>
+												</div>
+											</div>
+										</div>
+									</div>
+								<?php endif; ?>
+							<?php endforeach; ?>
+						<?php endif; ?>
+					</div>
+				</div>
+
+				<!-- Create New User -->
+				<div class="card">
+					<div class="card-header fw-semibold">
+						<i class="fa-solid fa-user-plus me-1"></i> Create New User
+					</div>
+					<div class="card-body">
+						<form method="post" action="admin.php?tab=users">
+							<input type="hidden" name="action" value="create_user">
+							<?php echo csrf_field(); ?>
+
+							<div class="form-group">
+								<label for="new_username">Username *</label>
+								<input type="text" id="new_username" name="new_username" required
+									pattern="[a-zA-Z0-9_-]{3,50}"
+									title="3-50 characters, alphanumeric, underscore, or dash only">
+								<small>3-50 characters, alphanumeric, underscore, or dash only</small>
+							</div>
+
+							<div class="two-col">
+								<div class="form-group">
+									<label for="new_password">Password *</label>
+									<input type="password" id="new_password" name="new_password" required minlength="8">
+									<small>Minimum 8 characters</small>
+								</div>
+
+								<div class="form-group">
+									<label for="new_password_confirm">Confirm Password *</label>
+									<input type="password" id="new_password_confirm" name="new_password_confirm" required minlength="8">
+									<small>Re-enter password</small>
+								</div>
+							</div>
+
+							<div style="margin-top: 20px;">
+								<button type="submit" class="btn btn-md btn-outline-primary">
+									<i class="fa-solid fa-user-plus me-1"></i> Create User
+								</button>
+							</div>
+						</form>
+
+						<script>
+							// Client-side password confirmation validation
+							document.getElementById('new_password_confirm').addEventListener('input', function() {
+								const password = document.getElementById('new_password').value;
+								const confirm = this.value;
+								if (password !== confirm) {
+									this.setCustomValidity('Passwords do not match');
+								} else {
+									this.setCustomValidity('');
+								}
+							});
+						</script>
+					</div>
+				</div>
 
 			<?php endif; ?>
 		</div>

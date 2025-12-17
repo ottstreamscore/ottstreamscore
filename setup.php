@@ -106,6 +106,17 @@ if (!$is_cli && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     INDEX `idx_username` (`username`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
 
+				"CREATE TABLE IF NOT EXISTS `login_attempts` (
+                    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                    `ip_address` VARCHAR(45) NOT NULL,
+                    `username` VARCHAR(50) NOT NULL,
+                    `attempted_at` DATETIME NOT NULL,
+                    `success` TINYINT(1) NOT NULL DEFAULT 0,
+                    INDEX `idx_ip_time` (`ip_address`, `attempted_at`),
+                    INDEX `idx_username_time` (`username`, `attempted_at`),
+                    INDEX `idx_attempted_at` (`attempted_at`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
 				"CREATE TABLE IF NOT EXISTS `channels` (
                     `id` BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
                     `tvg_id` VARCHAR(191) NOT NULL,

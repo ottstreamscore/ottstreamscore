@@ -120,14 +120,6 @@ $groups = $pdo->query("
 		display: none;
 	}
 
-	.ignored-item {
-		background: #f8f9fa;
-		border: 1px solid #dee2e6;
-		border-radius: 4px;
-		padding: 0.75rem;
-		margin-bottom: 0.5rem;
-	}
-
 	#audit_summary {
 		font-size: 13pt;
 	}
@@ -365,6 +357,27 @@ $groups = $pdo->query("
 			lengthMenu: [
 				[25, 50, 100, 250],
 				[25, 50, 100, 250]
+			],
+			// ADD THESE:
+			dom: "<'row'<'col-sm-12 col-md-4'l><'col-sm-12 col-md-8'<'d-flex justify-content-end align-items-center gap-2'Bf>>>" +
+				"<'row'<'col-sm-12'tr>>" +
+				"<'row'<'col-sm-12 col-md-5'i><'col-sm-12 col-md-7'p>>",
+			buttons: [{
+					extend: 'copy',
+					text: '<i class="fa-solid fa-copy me-1"></i> Copy',
+					className: 'btn btn-outline-secondary btn-sm',
+					exportOptions: {
+						columns: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] // Skip hidden columns
+					}
+				},
+				{
+					extend: 'csv',
+					text: '<i class="fa-solid fa-file-csv me-1"></i> Export CSV',
+					className: 'btn btn-outline-secondary btn-sm',
+					exportOptions: {
+						columns: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] // Skip hidden columns
+					}
+				}
 			],
 			ajax: {
 				url: '<?= h($BASE) ?>/reports_data.php',
@@ -710,7 +723,7 @@ $groups = $pdo->query("
 		ignores.forEach(ignore => {
 			html += `
 				<div class="ignored-item">
-					<div class="d-flex justify-content-between align-items-center">
+					<div class="alternative-feed d-flex justify-content-between align-items-center">
 						<div>
 							<strong>${ignore.tvg_name || ignore.tvg_id}</strong>
 							<div class="text-muted small">

@@ -15,6 +15,9 @@ declare(strict_types=1);
 	<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
 	<script src="https://cdn.jsdelivr.net/npm/datatables.net@1.13.10/js/jquery.dataTables.min.js"></script>
 	<script src="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.10/js/dataTables.bootstrap5.min.js"></script>
+	<script src="https://cdn.datatables.net/buttons/2.4.2/js/dataTables.buttons.min.js"></script>
+	<script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.html5.min.js"></script>
+
 
 	<script>
 		// Apply saved theme 
@@ -222,6 +225,45 @@ declare(strict_types=1);
 
 		.dataTables_wrapper .dataTables_info {
 			color: var(--text-secondary);
+		}
+
+		div.dt-buttons {
+			display: inline-block;
+			margin-right: 10px;
+		}
+
+		div.dataTables_wrapper div.dataTables_filter {
+			display: inline-block;
+		}
+
+		/* Dark mode compatibility for DataTables copy notification */
+		div.dt-button-info {
+			text-align: center;
+			position: fixed !important;
+			top: 50% !important;
+			left: 50% !important;
+			transform: translate(-50%, -50%) !important;
+			background-color: var(--bs-body-bg) !important;
+			border: 1px solid var(--bs-border-color) !important;
+			color: var(--bs-body-color) !important;
+			z-index: 9999 !important;
+			padding: 20pt;
+		}
+
+		div.dt-button-info h2 {
+			padding-bottom: 10pt;
+			font-size: 20pt;
+			text-align: center;
+			color: var(--bs-body-color) !important;
+			border-bottom: 1px solid var(--bs-border-color) !important;
+		}
+
+		.dt-button.buttons-copy {
+			margin-right: 3pt;
+		}
+
+		.dataTables_length {
+			margin-bottom: 8pt;
 		}
 
 		/* ============================================================================

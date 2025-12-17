@@ -192,6 +192,27 @@ $group = h((string)($_GET['group'] ?? ''));
 				[25, 50, 100, 250],
 				[25, 50, 100, 250]
 			],
+			// ADD THESE:
+			dom: "<'row'<'col-sm-12 col-md-4'l><'col-sm-12 col-md-8'<'d-flex justify-content-end align-items-center gap-2'Bf>>>" +
+				"<'row'<'col-sm-12'tr>>" +
+				"<'row'<'col-sm-12 col-md-5'i><'col-sm-12 col-md-7'p>>",
+			buttons: [{
+					extend: 'copy',
+					text: '<i class="fa-solid fa-copy me-1"></i> Copy',
+					className: 'btn btn-outline-secondary btn-sm',
+					exportOptions: {
+						columns: [0, 1, 2, 3, 4, 5, 6, 7]
+					}
+				},
+				{
+					extend: 'csv',
+					text: '<i class="fa-solid fa-file-csv me-1"></i> Export CSV',
+					className: 'btn btn-outline-secondary btn-sm',
+					exportOptions: {
+						columns: [0, 1, 2, 3, 4, 5, 6, 7]
+					}
+				}
+			],
 			ajax: {
 				url: 'feeds_data.php',
 				type: 'GET',

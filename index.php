@@ -356,7 +356,27 @@ $recent = $pdo->query("
 			language: {
 				emptyTable: "No recent checks yet.",
 				zeroRecords: "No matches."
-			}
+			},
+			dom: "<'row'<'col-sm-12 col-md-6'l><'col-sm-12 col-md-6'<'d-flex justify-content-end'B>>>" +
+				"<'row'<'col-sm-12'tr>>" +
+				"<'row'<'col-sm-12 col-md-5'i><'col-sm-12 col-md-7'p>>",
+			buttons: [{
+					extend: 'copy',
+					text: '<i class="fa-solid fa-copy me-1"></i> Copy',
+					className: 'btn btn-outline-secondary btn-sm',
+					exportOptions: {
+						columns: ':visible'
+					}
+				},
+				{
+					extend: 'csv',
+					text: '<i class="fa-solid fa-file-csv me-1"></i> Export',
+					className: 'btn btn-outline-secondary btn-sm',
+					exportOptions: {
+						columns: ':visible'
+					}
+				}
+			]
 		});
 	});
 </script>

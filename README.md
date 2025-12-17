@@ -8,13 +8,14 @@ OTT Stream Score continuously monitors your IPTV streams, tracks reliability and
 
 ## What It Does
 
-Many IPTV playlists contain duplicate channels — multiple streams for the same channel. Instead of randomly picking one or manually testing each, OTT Stream Score:
+Many IPTV playlists contain duplicate channels – multiple streams for the same channel. Instead of randomly picking one or manually testing each, OTT Stream Score:
 
 - **Monitors** all your LIVE streams 24/7
 - **Tracks** reliability, resolution, FPS, and quality metrics
 - **Ranks** duplicate feeds so you always know which is best
 - **Reports** stream health and historical performance
-- **Audits** entire groups to identify better feed alternatives across categories
+- **Audits** entire channel groups to identify better feed alternatives across categories
+- **Manages** user access with secure authentication and account controls
 
 **Perfect for:**
 - IPTV resellers managing a custom playlist through an editor
@@ -22,7 +23,7 @@ Many IPTV playlists contain duplicate channels — multiple streams for the same
 - Content curators optimizing feed quality across categories
 - Anyone tired of manually testing duplicate streams
 
-> **⚠️ Important:** Panel owners should provision a unique subscriber account for OTT Stream Score. Do not use your personal viewing account — the software monitors streams continuously and will prevent you from watching streams simultaneously on a separate device. If you are an individual user, use a multi-connection account, or a second connection/account.
+> **⚠️ Important:** Panel owners should provision a unique subscriber account for OTT Stream Score. Do not use your personal viewing account – the software monitors streams continuously and will prevent you from watching streams simultaneously on a separate device. If you are an individual user, use a multi-connection account, or a second connection/account.
 
 ---
 
@@ -51,7 +52,7 @@ Feeds are scored and ranked by:
 - Channels: Browse all channels with ranked feeds
 - Feeds: Detailed feed list with filtering
 - Reports: Dead feeds, top performers, quality breakdowns
-- **Group Audit**: Analyze entire categories and find better alternatives
+- Group Audit: Analyze entire categories and find better alternatives
 - History: View check history for any feed
 
 ---
@@ -59,10 +60,10 @@ Feeds are scored and ranked by:
 ## Key Features
 
 ### Smart Monitoring
-- **LIVE streams only** — Automatically filters out VOD content
-- **Adaptive scheduling** — Healthy feeds checked less often, failed feeds retried progressively
-- **Lock mechanism** — Prevents concurrent runs and resource conflicts
-- **Batch processing** — Configurable batch size for load management
+- **LIVE streams only** – Automatically filters out VOD content
+- **Adaptive scheduling** – Healthy feeds checked less often, failed feeds retried progressively
+- **Lock mechanism** – Prevents concurrent runs and resource conflicts
+- **Batch processing** – Configurable batch size for load management
 
 ### Quality Metrics
 - HTTP reachability and response codes
@@ -72,22 +73,30 @@ Feeds are scored and ranked by:
 - Reliability scoring (7-day window)
 
 ### User Interface
-- **Server-side DataTables** — Fast filtering and sorting even with thousands of feeds
-- **Group filtering** — Browse by category/group/feed/channel
-- **Search** — Find channels by name or EPG ID (tvg-id)
-- **Historical data** — View past check results for any feed/channel
-- **Dark mode default** — Comfortable viewing
+- **Server-side DataTables** – Fast filtering and sorting even with thousands of feeds
+- **Group filtering** – Browse by category/group/feed/channel
+- **Search** – Find channels by name or EPG ID (tvg-id)
+- **Historical data** – View past check results for any feed/channel
+- **Dark mode default** – Comfortable viewing
 
 ### Group Audit
-- **Category-wide analysis** — Audit all channels in a group at once
-- **Smart recommendations** — Find better feeds from other categories based on historical performance
-- **Date range filtering** — Analyze feed quality over specific time periods (7 days, 30 days, 90 days, all time, custom)
-- **Visual indicators** — Instantly see which channels are optimal (green), need review (yellow), or lack data (gray)
-- **Ignore system** — Dismiss recommendations you don't want and manage ignored feeds
-- **Feed comparison** — View detailed stats and history for current vs. recommended feeds
-- **Bulk optimization** — Quickly identify multiple channels that could use better alternatives
+- **Category-wide analysis** – Audit all channels in a group at once
+- **Smart recommendations** – Find better feeds from other categories based on historical performance
+- **Date range filtering** – Analyze feed quality over specific time periods (7 days, 30 days, 90 days, all time, custom)
+- **Visual indicators** – Instantly see which channels are optimal (green), need review (yellow), or lack data (gray)
+- **Ignore system** – Dismiss recommendations you don't want and manage ignored feed suggestions
+- **Feed comparison** – View detailed stats and history for current vs. recommended feeds
+- **Bulk optimization** – Quickly identify multiple channels that could use better alternatives
 
 This helps you systematically improve feed quality across your entire playlist by finding the best available source for each channel, even if it exists in a different category.
+
+### User Management
+- **Multi-user support** – Create accounts for team members with individual credentials
+- **Security monitoring** – Track login attempts and identify suspicious activity
+- **Account controls** – Reset lockouts, view login logs, manage user access
+- **Audit trail** – Failed login attempt logging with IP addresses and timestamps
+
+Teams can collaborate securely without sharing passwords, and the team has full visibility into account activity.
 
 ---
 
@@ -143,6 +152,7 @@ Adjust frequency based on your playlist size and server capacity.
 
 - **[INSTALL.md](INSTALL.md)** - Installation and upgrade guide
 - **[SECURITY.md](SECURITY.md)** - Security best practices
+- **[RELEASE_NOTES_1.4.md](RELEASE_NOTES_1.4.md)** - Version 1.4 release notes
 
 ---
 
@@ -160,6 +170,10 @@ Browse and filter all monitored feeds
 View all feeds for a channel, ranked by quality
 ![Channel Report](images/single_channel.png)
 
+### Feed History
+View all feeds for a channel, ranked by quality
+![Channel Report](images/feed_history.png)
+
 ### Reports
 Analyze entire categories and find better feed alternatives
 ![Group Audit](images/reports.png)
@@ -176,8 +190,8 @@ Analyze entire categories and find better feed alternatives
 - **feed_check_queue** - Monitoring schedule
 - **group_audit_ignores** - User-dismissed feed recommendations
 - **settings** - Application configuration
-- **users** - Authentication
-- **login_attempts** - Security logging
+- **users** - Authentication and user management
+- **login_attempts** - Security logging and rate limiting
 
 ### Feed Checking Logic
 1. Queue selects next batch of due feeds
@@ -206,7 +220,8 @@ All configuration managed via Admin panel after installation:
 - **Sync playlist** - Sync a new playlist with changes
 - **Update stream credentials** - Change the authorized subscriber credentials for the stored playlist
 - **Database credentials** - Update connection settings
-- **User accounts** - Manage admin account
+- **User management** - Create and manage user accounts
+- **Security monitoring** - View failed login attempts and reset lockouts
 
 ---
 
@@ -215,10 +230,12 @@ All configuration managed via Admin panel after installation:
 **Built-in protections:**
 - Session-based authentication
 - CSRF protection on all forms
-- Rate limiting (5 attempts / 15 minutes)
+- Rate limiting (5 attempts / 15 minutes per user and IP)
 - Password hashing (bcrypt)
 - Input sanitization
 - SQL injection prevention (prepared statements)
+- Failed login attempt logging
+- Account lockout protection
 
 **See [SECURITY.md](SECURITY.md) for hardening recommendations.**
 
@@ -242,6 +259,11 @@ All configuration managed via Admin panel after installation:
 - Verify credentials in `.db_bootstrap`
 - Test connection: `mysql -h host -u user -p database`
 - Check database user permissions
+
+**Account locked out**
+- Wait 15 minutes for automatic unlock
+- Or admin can reset via User Management tab
+- Or manually: `DELETE FROM login_attempts WHERE username = 'username';`
 
 **See [INSTALL.md](INSTALL.md) for detailed troubleshooting.**
 
@@ -271,5 +293,6 @@ Contributions welcome! Please:
 
 ---
 
-**Current Version:** 1.3  
-**Release Date:** December 2025
+**Current Version:** 1.4  
+**Release Date:** December 2025  
+**Previous Version:** 1.3 (December 2025)

@@ -211,6 +211,7 @@ if (!function_exists('res_badge')) {
 	}
 </style>
 
+
 <!-- Header with feed info -->
 <div class="d-flex justify-content-between align-items-start mb-4">
 	<div>
@@ -223,7 +224,12 @@ if (!function_exists('res_badge')) {
 				<li class="breadcrumb-item active">Check History</li>
 			</ol>
 		</nav>
-		<div class="h2 mb-1"><?= h($displayName) ?></div>
+		<div class="h2 mb-1">
+			<?= h($displayName) ?>
+			<button type="button" class="btn btn-outline-primary btn-sm ms-3" id="manualCheckBtn" style="position:relative; top:-4px;">
+				<i class="fa-solid fa-rotate"></i> Initiate Feed Check
+			</button>
+		</div>
 		<div class="text-muted">
 			<span class="me-3"><span class="text-muted">Group:</span> <?= h($displayGroup) ?></span>
 			<?php if ($tvgId): ?>
@@ -372,6 +378,34 @@ if (!function_exists('res_badge')) {
 	</div>
 </div>
 
+<!-- Manual Check Modal -->
+<div class="modal fade" id="manualCheckModal" tabindex="-1" aria-labelledby="manualCheckModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+	<div class="modal-dialog modal-dialog-centered">
+		<div class="modal-content">
+			<div class="modal-header">
+				<h5 class="modal-title" id="manualCheckModalLabel">Manual Feed Check</h5>
+				<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" id="modalCloseBtn"></button>
+			</div>
+			<div class="modal-body text-center">
+				<div id="checkingStatus">
+					<div class="mb-3">
+						<i class="fa-solid fa-spinner fa-spin fa-3x text-primary"></i>
+					</div>
+					<h5 id="statusMessage">Initializing check...</h5>
+					<p class="text-muted mb-0" id="statusDetail">Please wait</p>
+				</div>
+				<div id="checkResults" style="display: none;">
+					<div class="alert mb-3" id="resultAlert" role="alert"></div>
+					<div id="resultDetails"></div>
+				</div>
+			</div>
+			<div class="modal-footer" id="modalFooter" style="display: none;">
+				<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+			</div>
+		</div>
+	</div>
+</div>
+
 <script>
 	$(function() {
 		$('#historyTable').DataTable({
@@ -382,8 +416,217 @@ if (!function_exists('res_badge')) {
 			lengthMenu: [
 				[25, 50, 100, 250],
 				[25, 50, 100, 250]
+			],
+			dom: "<'row'<'col-sm-12 col-md-4'l><'col-sm-12 col-md-8'<'d-flex justify-content-end align-items-center gap-2'Bf>>>" +
+				"<'row'<'col-sm-12'tr>>" +
+				"<'row'<'col-sm-12 col-md-5'i><'col-sm-12 col-md-7'p>>",
+			buttons: [{
+					extend: 'copy',
+					text: '<i class="fa-solid fa-copy me-1"></i> Copy',
+					className: 'btn btn-outline-secondary btn-sm',
+					exportOptions: {
+						columns: [0, 1, 2, 3, 4, 5, 6] // All columns
+					}
+				},
+				{
+					extend: 'csv',
+					text: '<i class="fa-solid fa-file-csv me-1"></i> Export',
+					className: 'btn btn-outline-secondary btn-sm',
+					exportOptions: {
+						columns: [0, 1, 2, 3, 4, 5, 6] // All columns
+					}
+				}
 			]
 		});
+
+		// Manual Check Button Handler
+		$('#manualCheckBtn').on('click', function() {
+			const feedId = <?= $feedId ?>;
+			const modal = new bootstrap.Modal($('#manualCheckModal')[0]);
+
+			// Reset modal state
+			$('#checkingStatus').show();
+			$('#checkResults').hide();
+			$('#modalFooter').hide();
+			$('#modalCloseBtn').hide();
+			$('#statusMessage').text('Initializing check...');
+			$('#statusDetail').text('Please wait');
+
+			modal.show();
+
+			// Update status messages
+			setTimeout(() => {
+				$('#statusMessage').text('Connecting to stream...');
+				$('#statusDetail').text('Establishing connection');
+			}, 500);
+
+			setTimeout(() => {
+				$('#statusMessage').text('Analyzing video stream...');
+				$('#statusDetail').text('Probing codec, resolution, and framerate');
+			}, 2000);
+
+			// Perform AJAX request
+			$.ajax({
+				url: 'ajax_manual_check.php',
+				method: 'POST',
+				data: {
+					feed_id: feedId
+				},
+				dataType: 'json',
+				timeout: 30000, // 30 second timeout
+				success: function(response) {
+					$('#checkingStatus').hide();
+					$('#checkResults').show();
+					$('#modalFooter').show();
+					$('#modalCloseBtn').show();
+
+					if (response.success) {
+						const data = response.data;
+						const statusClass = data.ok ? 'alert-success' : 'alert-danger';
+						const statusIcon = data.ok ? 'fa-circle-check' : 'fa-circle-xmark';
+						const statusText = data.ok ? 'Check Successful' : 'Check Failed';
+
+						$('#resultAlert')
+							.removeClass('alert-success alert-danger')
+							.addClass(statusClass)
+							.html(`<i class="fa-solid ${statusIcon} me-2"></i><strong>${statusText}</strong>`);
+
+						// Build results HTML
+						let resultsHtml = '<div class="row g-3 text-start">';
+
+						if (data.ok) {
+							resultsHtml += `
+								<div class="col-6">
+									<div class="fw-semibold">Resolution</div>
+									<div>${data.width || '—'} × ${data.height || '—'}</div>
+								</div>
+								<div class="col-6">
+									<div class="fw-semibold">FPS</div>
+									<div>${data.fps || '—'}</div>
+								</div>
+								<div class="col-6">
+									<div class="fw-semibold">Codec</div>
+									<div>${data.codec || '—'}</div>
+								</div>
+								<div class="col-6">
+									<div class="fw-semibold">Reliability</div>
+									<div>${data.reliability}%</div>
+								</div>
+							`;
+						} else {
+							resultsHtml += `
+								<div class="col-12">
+									<div class="fw-semibold">Error</div>
+									<div class="text-danger">${data.error || 'Unknown error'}</div>
+								</div>
+							`;
+						}
+
+						resultsHtml += '</div>';
+						$('#resultDetails').html(resultsHtml);
+
+						// Update page statistics and table
+						updatePageWithNewCheck(data);
+					} else {
+						$('#resultAlert')
+							.removeClass('alert-success alert-danger')
+							.addClass('alert-warning')
+							.html(`<i class="fa-solid fa-triangle-exclamation me-2"></i><strong>Error</strong>`);
+						$('#resultDetails').html(`<p class="text-start mb-0">${response.message}</p>`);
+					}
+				},
+				error: function(xhr, status, error) {
+					$('#checkingStatus').hide();
+					$('#checkResults').show();
+					$('#modalFooter').show();
+					$('#modalCloseBtn').show();
+
+					let errorMsg = 'An error occurred while checking the feed.';
+					if (status === 'timeout') {
+						errorMsg = 'The check timed out. The stream may be unresponsive.';
+					} else if (xhr.responseJSON && xhr.responseJSON.message) {
+						errorMsg = xhr.responseJSON.message;
+					}
+
+					$('#resultAlert')
+						.removeClass('alert-success alert-danger')
+						.addClass('alert-danger')
+						.html(`<i class="fa-solid fa-circle-xmark me-2"></i><strong>Error</strong>`);
+					$('#resultDetails').html(`<p class="text-start mb-0">${errorMsg}</p>`);
+				}
+			});
+		});
+
+		// Function to update page with new check data
+		function updatePageWithNewCheck(data) {
+			// Update statistics cards
+			const totalChecks = parseInt($('.stat-card:first .stat-number').text().replace(/,/g, '')) + 1;
+			$('.stat-card:first .stat-number').text(totalChecks.toLocaleString());
+
+			if (data.ok) {
+				// Update successful checks
+				const okChecks = parseInt($('.stat-card:eq(2) .stat-number').text().replace(/,/g, '')) + 1;
+				$('.stat-card:eq(2) .stat-number').text(okChecks.toLocaleString());
+			} else {
+				// Update failed checks
+				const failChecks = parseInt($('.stat-card:eq(3) .stat-number').text().replace(/,/g, '')) + 1;
+				$('.stat-card:eq(3) .stat-number').text(failChecks.toLocaleString());
+			}
+
+			// Update reliability
+			$('.stat-card:eq(1) .stat-number').text(data.reliability.toFixed(1) + '%');
+
+			// Add new row to DataTable
+			const table = $('#historyTable').DataTable();
+
+			const statusBadge = data.ok ?
+				'<span class="badge bg-success">ok</span>' :
+				'<span class="badge bg-danger">fail</span>';
+
+			const resolution = (data.width && data.height) ?
+				`${data.width}×${data.height}` :
+				'—';
+
+			// Determine resolution class
+			let resClass = 'Unknown';
+			let resBadgeClass = 'bg-light text-dark';
+			if (data.width && data.height) {
+				const h = parseInt(data.height);
+				if (h >= 2160 || data.width >= 3840) {
+					resClass = '4K';
+					resBadgeClass = 'bg-warning text-dark';
+				} else if (h >= 1080) {
+					resClass = 'FHD';
+					resBadgeClass = 'bg-primary';
+				} else if (h >= 720) {
+					resClass = 'HD';
+					resBadgeClass = 'bg-info text-dark';
+				} else {
+					resClass = 'SD';
+					resBadgeClass = 'bg-secondary';
+				}
+			}
+			const resBadge = `<span class="badge ${resBadgeClass}">${resClass}</span>`;
+
+			const fps = data.fps ? parseFloat(data.fps).toFixed(2) : '—';
+			const codec = data.codec || '—';
+			const error = data.error || 'None';
+
+			// Use timestamp directly from PHP (already in correct timezone and format)
+			// Just trim to YYYY-MM-DD HH:MM (remove seconds)
+			const timestamp = data.timestamp.substring(0, 16);
+
+			// Add row at the beginning and redraw with sorting
+			table.row.add([
+				timestamp,
+				statusBadge,
+				resolution,
+				resBadge,
+				fps,
+				codec,
+				`<span class="error-cell text-muted" title="${error}">${error}</span>`
+			]).draw(true); // Use true to reset pagination and maintain sort order
+		}
 	});
 </script>
 

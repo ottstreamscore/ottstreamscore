@@ -362,6 +362,27 @@ $best = $rows[0] ?? null;
 				[3, 'desc'],
 				[5, 'desc'],
 				[6, 'desc']
+			],
+			// ADD THESE:
+			dom: "<'row'<'col-sm-12 col-md-4'l><'col-sm-12 col-md-8'<'d-flex justify-content-end align-items-center gap-2'Bf>>>" +
+				"<'row'<'col-sm-12'tr>>" +
+				"<'row'<'col-sm-12 col-md-5'i><'col-sm-12 col-md-7'p>>",
+			buttons: [{
+					extend: 'copy',
+					text: '<i class="fa-solid fa-copy me-1"></i> Copy',
+					className: 'btn btn-outline-secondary btn-sm',
+					exportOptions: {
+						columns: ':visible'
+					}
+				},
+				{
+					extend: 'csv',
+					text: '<i class="fa-solid fa-file-csv me-1"></i> Export',
+					className: 'btn btn-outline-secondary btn-sm',
+					exportOptions: {
+						columns: ':visible'
+					}
+				}
 			]
 		});
 	});

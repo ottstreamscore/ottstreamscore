@@ -107,8 +107,28 @@ $groups = $pdo->query("
 			],
 			order: [
 				[2, 'asc']
-			], // default sort by Channel
-
+			],
+			// ADD THESE TWO:
+			dom: "<'row'<'col-sm-12 col-md-4'l><'col-sm-12 col-md-8'<'d-flex justify-content-end align-items-center gap-2'Bf>>>" +
+				"<'row'<'col-sm-12'tr>>" +
+				"<'row'<'col-sm-12 col-md-5'i><'col-sm-12 col-md-7'p>>",
+			buttons: [{
+					extend: 'copy',
+					text: '<i class="fa-solid fa-copy me-1"></i> Copy',
+					className: 'btn btn-outline-secondary btn-sm',
+					exportOptions: {
+						columns: [1, 2, 3, 4, 5] // Skip logo column (0)
+					}
+				},
+				{
+					extend: 'csv',
+					text: '<i class="fa-solid fa-file-csv me-1"></i> Export',
+					className: 'btn btn-outline-secondary btn-sm',
+					exportOptions: {
+						columns: [1, 2, 3, 4, 5] // Skip logo column (0)
+					}
+				}
+			],
 			ajax: {
 				url: '<?= h($BASE) ?>/channels_data.php',
 				type: 'GET',
@@ -117,7 +137,6 @@ $groups = $pdo->query("
 					d.group = $('#group').val() || '';
 				}
 			},
-
 			columns: [{
 					data: 'logo',
 					orderable: false
