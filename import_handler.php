@@ -320,6 +320,8 @@ try {
 	$feedsSkippedExisting = 0;
 	$associationsCreated = 0;
 	$associationsDeleted = 0;
+	$orphanedFeeds = 0;
+	$queueEntriesAdded = 0;
 
 	$current = null;
 
@@ -402,14 +404,75 @@ try {
 			$channelsUpdated += ($stUpdateChannel->rowCount() > 0) ? 1 : 0;
 		}
 
-		// === UPSERT FEED (by url_hash only) ===
+		// === UPSERT FEED ===
 		$h = sha1($url);
+		$feedId = 0;
+		$currentChannelFeedId = 0;
 
+		// In SYNC mode with junction table: find feed by channel association first
+		if ($mode === 'sync' && $hasJunctionTable) {
+			// Find existing feed for this channel
+			$stFindByChannel = $pdo->prepare("
+				SELECT f.id FROM feeds f
+				INNER JOIN channel_feeds cf ON cf.feed_id = f.id
+				WHERE cf.channel_id = :channel_id
+				LIMIT 1
+			");
+			$stFindByChannel->execute([':channel_id' => $channelId]);
+			$currentChannelFeedId = (int)($stFindByChannel->fetchColumn() ?: 0);
+		}
+
+		// Check if the new URL already exists in feeds table
 		$stFindFeed->execute([':h' => $h]);
-		$feedId = (int)($stFindFeed->fetchColumn() ?: 0);
+		$existingFeedId = (int)($stFindFeed->fetchColumn() ?: 0);
 
-		if ($feedId <= 0) {
-			// Insert new feed - FIXED: Include channel_id if column exists
+		if ($existingFeedId > 0) {
+			// URL already exists
+			$feedId = $existingFeedId;
+
+			// If this channel had a different feed, we need to handle the switch
+			if ($currentChannelFeedId > 0 && $currentChannelFeedId !== $existingFeedId) {
+				// Channel is switching to a different feed
+				// The old association will be cleaned up by the stale deletion
+				$feedsUpdated++;
+			} else {
+				// Same feed, just mark as skipped or updated
+				if ($mode === 'insert_only') {
+					$feedsSkippedExisting++;
+				} else {
+					// Could update url_display if needed
+					if ($hasUrlDisplayCol) {
+						$params = [
+							':url_display' => basename(parse_url($url, PHP_URL_PATH) ?: $url),
+							':id' => $feedId,
+						];
+						$pdo->prepare("UPDATE feeds SET url_display = :url_display WHERE id = :id")
+							->execute($params);
+					}
+				}
+			}
+		} elseif ($currentChannelFeedId > 0) {
+			// Channel has an existing feed, and URL doesn't exist elsewhere
+			// Update the existing feed with new URL
+			$feedId = $currentChannelFeedId;
+
+			$params = [
+				':url' => $url,
+				':id' => $feedId,
+			];
+			if ($hasUrlDisplayCol) {
+				$params[':url_display'] = basename(parse_url($url, PHP_URL_PATH) ?: $url);
+			}
+
+			$stUpdateFeed->execute($params);
+
+			// Also update url_hash in case URL changed
+			$pdo->prepare("UPDATE feeds SET url_hash = :h WHERE id = :id")
+				->execute([':h' => $h, ':id' => $feedId]);
+
+			$feedsUpdated++;
+		} else {
+			// No existing feed - insert new one
 			$params = [
 				':url' => $url,
 				':h' => $h,
@@ -425,21 +488,19 @@ try {
 			$stInsertFeed->execute($params);
 			$feedId = (int)$pdo->lastInsertId();
 			$feedsInserted++;
-		} else {
-			if ($mode === 'insert_only') {
-				$feedsSkippedExisting++;
-			} else {
-				// Sync mode: update URL and display (in case host/credentials changed)
-				$params = [
-					':url' => $url,
-					':id' => $feedId,
-				];
-				if ($hasUrlDisplayCol) {
-					$params[':url_display'] = basename(parse_url($url, PHP_URL_PATH) ?: $url);
-				}
 
-				$stUpdateFeed->execute($params);
-				$feedsUpdated += ($stUpdateFeed->rowCount() > 0) ? 1 : 0;
+			// Add new feed to check queue
+			if ($hasJunctionTable) {
+				try {
+					$stmt = $pdo->prepare("
+						INSERT IGNORE INTO feed_check_queue (feed_id, next_run_at, locked_at, lock_token, attempts, last_result_ok, last_error)
+						VALUES (:feed_id, NOW(), NULL, NULL, 0, NULL, NULL)
+					");
+					$stmt->execute([':feed_id' => $feedId]);
+					$queueEntriesAdded += $stmt->rowCount();
+				} catch (Throwable $e) {
+					// Queue table might not exist, ignore
+				}
 			}
 		}
 
@@ -484,6 +545,9 @@ try {
 		$stmt = $pdo->prepare("DELETE FROM channel_feeds WHERE last_seen IS NULL");
 		$stmt->execute();
 		$associationsDeleted = $stmt->rowCount();
+
+		// NOTE: We do NOT delete orphaned feeds automatically because they may have
+		// valuable check history. Manual cleanup can be done separately if needed.
 	}
 
 	$pdo->commit();
@@ -506,6 +570,12 @@ try {
 	if ($hasJunctionTable) {
 		$stats['Associations created'] = number_format($associationsCreated);
 		$stats['Associations deleted (removed)'] = number_format($associationsDeleted);
+		if ($orphanedFeeds > 0) {
+			$stats['Orphaned feeds deleted'] = number_format($orphanedFeeds);
+		}
+		if ($queueEntriesAdded > 0) {
+			$stats['Queue entries added'] = number_format($queueEntriesAdded);
+		}
 	}
 
 	redirect_back([
