@@ -4,6 +4,7 @@
  * setup.php
  * One-time setup script for OTT Stream Score
  * Works in both CLI and web browser
+ * v1.5
  */
 
 declare(strict_types=1);
@@ -214,7 +215,29 @@ if (!$is_cli && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE KEY `unique_ignore` (`tvg_id`, `source_group`, `suggested_feed_id`),
                     INDEX `idx_tvg_source` (`tvg_id`, `source_group`)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
+
+				"CREATE TABLE IF NOT EXISTS `feed_id_mapping` (
+                    `old_feed_id` BIGINT(20) UNSIGNED NOT NULL,
+                    `url_hash` VARCHAR(40) NOT NULL,
+                    `url` TEXT NOT NULL,
+                    PRIMARY KEY (`old_feed_id`),
+                    KEY `idx_url_hash` (`url_hash`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
+
+				"CREATE TABLE IF NOT EXISTS `stream_preview_lock` (
+                    `id` INT(11) NOT NULL AUTO_INCREMENT,
+                    `locked_by` VARCHAR(100) NOT NULL COMMENT 'Session ID of the user previewing',
+                    `locked_at` DATETIME NOT NULL COMMENT 'When the lock was acquired',
+                    `last_heartbeat` DATETIME NOT NULL COMMENT 'Last heartbeat timestamp',
+                    `feed_id` INT(11) NOT NULL COMMENT 'Feed ID being previewed',
+                    `channel_name` VARCHAR(255) DEFAULT NULL COMMENT 'Channel name for reference',
+                    PRIMARY KEY (`id`),
+                    UNIQUE KEY `single_lock` (`id`),
+                    KEY `idx_heartbeat` (`last_heartbeat`),
+                    KEY `idx_session` (`locked_by`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+
 			];
 
 			foreach ($tables as $sql) {
@@ -280,6 +303,18 @@ if (!$is_cli && $_SERVER['REQUEST_METHOD'] === 'POST') {
 			// Delete config.php if exists
 			if (file_exists(__DIR__ . '/config.php')) {
 				@unlink(__DIR__ . '/config.php');
+			}
+
+			// Create playlists directory
+			$playlistsDir = __DIR__ . '/playlists';
+			if (!file_exists($playlistsDir)) {
+				mkdir($playlistsDir, 0700, true);
+			}
+
+			// Create index.php protection file
+			$indexFile = $playlistsDir . '/index.php';
+			if (!file_exists($indexFile)) {
+				file_put_contents($indexFile, "<?php\nhttp_response_code(403);\ndie('Access denied');\n");
 			}
 
 			// Mark as installed
@@ -490,7 +525,7 @@ if (!$is_cli) {
 		<div class="container">
 			<div class="header">
 				<img src="logo_header.png" alt="OTT Stream Score" class="install_logo">
-				<p style="font-size:18pt; margin-top:10pt;">Setup Wizard</p>
+				<p style="font-size:18pt; margin-top:10pt;">Setup Wizard (v1.5)</p>
 			</div>
 
 			<div class="content">
@@ -650,5 +685,4 @@ if (!$is_cli) {
 	exit(0);
 }
 
-// CLI mode continues here... (original CLI code)
 ?>

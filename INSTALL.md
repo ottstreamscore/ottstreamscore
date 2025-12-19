@@ -1,8 +1,8 @@
-# OTT Stream Score v1.4 - Installation & Upgrade Guide
+# OTT Stream Score v1.5 - Installation & Upgrade Guide
 
 ## Overview
 
-Version 1.4 adds User Management capabilities and requires the `login_attempts` database table. Choose your installation path below based on your situation.
+Version 1.5 adds native stream preview functionality, browser-based playlist upload, and improved playlist import handling. Database changes include the `stream_preview_lock` table (for preview coordination) and `feed_id_mapping` table (for playlist import deduplication). Choose your installation path below based on your situation.
 
 ---
 
@@ -59,6 +59,7 @@ For brand new installations of OTT Stream Score.
    - Set timezone
    - Configure monitoring settings (batch size, lock duration, recheck intervals)
    - Create admin user account (username, password, email)
+   - Setup automatically creates `/playlists` directory (0700 permissions) with access protection
 
 5. **Login**
    
@@ -127,14 +128,11 @@ tar -czf ottstreamscore_backup_$(date +%F).tar.gz /path/to/your/installation
    
    The migration script will:
    - Verify your installation is v1.3 or later
-   - Create the `login_attempts` table (if missing)
-   - Report success or skip if table already exists
+   - Create tables added post v1.3
+   - Create `/playlists` directory if missing (0700 permissions with protection)
+   - Report success or skip if table/directory already exists
 
-4. **Access User Management**
-   
-   Login and navigate to Admin → User Management to see the new features.
-
-5. **Clean up** (optional)
+4. **Clean up** (optional)
    ```bash
    # Remove migration script
    rm migrate.php
@@ -145,9 +143,7 @@ tar -czf ottstreamscore_backup_$(date +%F).tar.gz /path/to/your/installation
 ### What Gets Migrated
 
 The migration script:
-- ✅ Creates `login_attempts` table
-- ✅ Adds required indexes for performance
-- ✅ Preserves all existing data
+- ✅ Adds new tables created post v1.3
 - ✅ Safe to run multiple times (idempotent)
 
 ### Expected Output
@@ -158,7 +154,7 @@ The migration script:
 OTT Stream Score - Database Migration (v1.3+)
 ======================================================================
 
-✅ Created login_attempts table
+✅ Created <<Table Name>>
 
 ======================================================================
 ✅ Migration completed successfully!
@@ -176,7 +172,7 @@ OTT Stream Score - Database Migration (v1.3+)
 
 **For users running versions 1.2 or earlier.**
 
-If you're upgrading from before v1.3, you must first read and follow the upgrade instructions from the v1.3 release, then upgrade to v1.4.
+If you're upgrading from before v1.3, you must first read and follow the upgrade instructions from the v1.3 release, then upgrade to v1.5.
 
 ### Why This Matters
 
@@ -218,15 +214,15 @@ Version 1.3 introduced major architectural changes:
 
 5. **Login and verify** settings in Admin Dashboard
 
-**Step 2: Upgrade to v1.4**
+**Step 2: Upgrade to v1.5**
 
 Once you're successfully running v1.3:
 
-1. **Get v1.4 files:**
+1. **Get v1.5 files:**
    ```bash
    cd /path/to/installation
    git checkout main
-   # or: git checkout v1.4
+   # or: git checkout v1.5
    ```
 
 2. **Run migration:**
@@ -250,6 +246,15 @@ Once you're successfully running v1.3:
 - No breaking changes
 - All v1.3 features remain unchanged
 
+**From v1.4 to v1.5:**
+- Adds native video player for stream previews
+- Adds browser-based playlist upload with automatic cleanup
+- Adds stream_preview_lock table for preview system
+- Adds feed_id_mapping table to improve playlist import deduplication
+- Creates protected /playlists directory for temporary upload storage
+- No breaking changes
+- All v1.4 features remain unchanged
+
 ---
 
 ## Post-Installation
@@ -272,15 +277,15 @@ Once installed, access your application at:
 - Retry logic configuration
 
 **Sync Playlist:**
-- Import M3U playlist files
-- Choose directory (defaults to application root)
+- Browser-based playlist upload (supports 80MB+ files with progress tracking)
+- Import M3U playlist files with automatic cleanup
 - Sync mode (update existing) or Insert-only mode
 
 **Update Stream Credentials:**
 - Bulk update /live/ URLs with new credentials
 - Force immediate recheck of affected feeds
 
-**User Management:** *(New in v1.4)*
+**User Management:** 
 - View all user accounts
 - Create new users
 - Monitor failed login attempts
@@ -343,7 +348,9 @@ See `SECURITY.md` for additional security measures:
 
 ### Playlist Security
 
-⚠️ **Important:** Store M3U playlist files in non-public directories that cannot be accessed via browser. Playlist files contain sensitive stream URLs and credentials.
+**Browser-based upload:** v1.5+ includes a browser upload system that stores playlists temporarily in `/playlists` directory (0700 permissions, protected by `index.php`). Files are automatically deleted after successful import.
+
+⚠️ **Important:** If manually uploading playlists via SFTP/SSH, never store them in web-accessible directories. Playlist files contain sensitive stream URLs and credentials.
 
 ---
 
@@ -435,14 +442,6 @@ php migrate.php
 DELETE FROM login_attempts WHERE username = 'locked_username';
 ```
 
-### Modals not working in User Management
-
-Clear browser cache and hard refresh:
-- Windows/Linux: `Ctrl + Shift + R`
-- Mac: `Cmd + Shift + R`
-
-If modals still don't work, check browser console for JavaScript errors.
-
 ### Permission denied errors
 
 **Fix file permissions:**
@@ -509,7 +508,7 @@ Contains database connection credentials.
 {
     "host": "localhost",
     "port": 3306,
-    "name": "ottstreamscore",
+    "name": "dbname",
     "user": "dbuser",
     "pass": "password",
     "charset": "utf8mb4"
@@ -527,19 +526,21 @@ Prevents setup from running multiple times.
 
 ## Database Schema
 
-### Version 1.4 Tables
+### Version 1.5 Tables
 
 **Core tables:**
 - `channels` - Channel metadata
 - `feeds` - Feed URLs and current status
+- `feed_id_mapping` - URL hash mapping table for feed ID persistence across playlist imports *(added in v1.5)*
 - `channel_feeds` - Many-to-many relationship (supports duplicates)
 - `feed_checks` - Historical check data
 - `feed_check_queue` - Monitoring schedule
+- `stream_preview_lock` - Mutex coordination table for stream preview system *(added in v1.5)*
 
 **Management tables:**
 - `settings` - Application configuration
 - `users` - User accounts and authentication
-- `login_attempts` - Security logging and rate limiting *(added in v1.4)*
+- `login_attempts` - Security logging and rate limiting 
 - `group_audit_ignores` - User-dismissed feed recommendations
 
 ### Schema Verification
@@ -548,15 +549,6 @@ Prevents setup from running multiple times.
 ```sql
 SHOW TABLES;
 ```
-
-**Verify login_attempts structure:**
-```sql
-DESCRIBE login_attempts;
-```
-
-Should show: id, ip_address, username, attempted_at, success
-
----
 
 ## Getting Help
 
@@ -616,8 +608,9 @@ SELECT * FROM feed_checks ORDER BY checked_at DESC LIMIT 10;
 
 ## Version History
 
-**v1.4** (December 2025) - User Management, login_attempts table, migrate.php  
-**v1.3** (December 2025) - Authentication system, database-driven configuration, admin panel  
+**v1.5** (December 2025) - Native video player for stream previews
+**v1.4** (December 2025) - User Management, migration interface
+**v1.3** (December 2025) - Authentication system, database-driven configuration, admin panel, setup interface
 **v1.2 and earlier** - File-based configuration (config.php)
 
 ---
@@ -626,10 +619,10 @@ SELECT * FROM feed_checks ORDER BY checked_at DESC LIMIT 10;
 
 - **[README.md](README.md)** - Feature overview and quick start
 - **[SECURITY.md](SECURITY.md)** - Security best practices
-- **[RELEASE_NOTES_1.4.md](RELEASE_NOTES_1.4.md)** - Version 1.4 changelog
+- **[RELEASE_NOTES_1.5.md](RELEASE_NOTES_1.5.md)** - Version 1.5 changelog
 
 ---
 
-**Current Version:** 1.4  
+**Current Version:** 1.5  
 **Release Date:** December 2025  
 **Support:** GitHub Issues and Documentation

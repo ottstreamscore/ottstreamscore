@@ -32,7 +32,6 @@ $groups = $pdo->query("
 ?>
 
 <style>
-	/* Hide default DT search box (you use sidebar filters) */
 	div.dataTables_filter {
 		display: none;
 	}
@@ -100,6 +99,7 @@ $groups = $pdo->query("
 		const table = $('#channelsTable').DataTable({
 			serverSide: true,
 			processing: true,
+			searching: false,
 			pageLength: 50,
 			lengthMenu: [
 				[25, 50, 100, 250],
@@ -108,8 +108,7 @@ $groups = $pdo->query("
 			order: [
 				[2, 'asc']
 			],
-			// ADD THESE TWO:
-			dom: "<'row'<'col-sm-12 col-md-4'l><'col-sm-12 col-md-8'<'d-flex justify-content-end align-items-center gap-2'Bf>>>" +
+			dom: "<'row'<'col-sm-12 col-md-4'l><'col-sm-12 col-md-4'f><'col-sm-12 col-md-4'<'d-flex justify-content-end align-items-center gap-2'B>>>" +
 				"<'row'<'col-sm-12'tr>>" +
 				"<'row'<'col-sm-12 col-md-5'i><'col-sm-12 col-md-7'p>>",
 			buttons: [{
@@ -117,7 +116,7 @@ $groups = $pdo->query("
 					text: '<i class="fa-solid fa-copy me-1"></i> Copy',
 					className: 'btn btn-outline-secondary btn-sm',
 					exportOptions: {
-						columns: [1, 2, 3, 4, 5] // Skip logo column (0)
+						columns: [1, 2, 3, 4, 5]
 					}
 				},
 				{
@@ -125,7 +124,7 @@ $groups = $pdo->query("
 					text: '<i class="fa-solid fa-file-csv me-1"></i> Export',
 					className: 'btn btn-outline-secondary btn-sm',
 					exportOptions: {
-						columns: [1, 2, 3, 4, 5] // Skip logo column (0)
+						columns: [1, 2, 3, 4, 5]
 					}
 				}
 			],
@@ -167,6 +166,7 @@ $groups = $pdo->query("
 		$('#reset').on('click', function() {
 			$('#q').val('');
 			$('#group').val('');
+			$('#channelsTable_filter input').val('');
 			table.ajax.reload(null, true);
 		});
 

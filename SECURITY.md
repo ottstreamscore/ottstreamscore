@@ -8,6 +8,7 @@ OTT Stream Score includes built-in security features that are automatically appl
 Setup automatically sets secure permissions:
 - `.db_bootstrap` - `chmod 0600` (database credentials)
 - `.installed` - `chmod 0600` (installation marker)
+- `/playlists/` - `chmod 0700` (temporary playlist storage during import processing)
 
 ### Authentication
 - Session-based authentication with 30-minute timeout
@@ -106,12 +107,34 @@ SetEnv DB_PASS "your_password"
 ## Best Practices
 
 ### Playlist Files
-⚠️ **Critical:** Never store M3U playlist files in web-accessible directories. They contain sensitive stream credentials.
+⚠️ **Critical:** Playlist files contain sensitive stream credentials.
 
-**Recommended locations:**
-- `/home/user/playlists/` (outside web root)
-- `/var/private/playlists/`
-- Any directory not accessible via HTTP
+**Built-in protections for `/playlists` directory:**
+- Directory permissions: `0700` (owner only)
+- `index.php` blocks directory browsing
+- Files auto-deleted after successful import
+- Only exists during upload → import workflow
+
+**Best practices:**
+- ✅ Use the built-in upload system (auto-cleanup)
+- ✅ Complete imports promptly (don't leave playlists on server)
+- ❌ Never manually store playlists in web-accessible directories
+- ❌ Don't upload playlists and leave them sitting for days
+
+**Additional hardening (optional):**
+```apache
+# Apache: Add to .htaccess
+<Directory "/playlists">
+    Require all denied
+</Directory>
+```
+
+```nginx
+# Nginx: Add to site config
+location /playlists/ {
+    deny all;
+}
+```
 
 ### HTTPS/SSL
 Always use HTTPS in production:

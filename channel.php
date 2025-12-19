@@ -224,6 +224,10 @@ $best = $rows[0] ?? null;
 		background-color: var(--logo-background);
 		border-radius: 12px;
 	}
+
+	div.dataTables_wrapper div.dataTables_filter {
+		margin-left: 10px;
+	}
 </style>
 
 <div class="d-flex justify-content-between align-items-start mb-3">
@@ -287,7 +291,7 @@ $best = $rows[0] ?? null;
 					<th class="text-end">Score</th>
 					<th>Checked</th>
 					<th>File</th>
-					<th>History</th>
+					<th>Actions</th>
 				</tr>
 			</thead>
 			<tbody>
@@ -343,8 +347,11 @@ $best = $rows[0] ?? null;
 							<a href="feed_history.php?feed_id=<?= (int)$r['feed_id'] ?>"
 								class="btn btn-sm btn-outline-primary"
 								title="View check history">
-								<i class="bi bi-clock-history"></i> View
+								<i class="fa-solid fa-clock-rotate-left me-1"></i> History
 							</a>
+							<button type="button" class="btn btn-outline-success btn-sm btn-preview" data-feed-id="<?= (int)$r['feed_id'] ?>">
+								<i class="fa-solid fa-play me-1"></i> Preview
+							</button>
 						</td>
 					</tr>
 				<?php endforeach; ?>

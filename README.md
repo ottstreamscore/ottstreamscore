@@ -90,6 +90,15 @@ Feeds are scored and ranked by:
 
 This helps you systematically improve feed quality across your entire playlist by finding the best available source for each channel, even if it exists in a different category.
 
+### Native Stream Player
+- **In-Browser Video Player**: Preview any stream directly within OTT Stream Score - no external tools required
+- **Universal Format Support**: Automatically detects and plays both MPEG-TS (.ts) and HLS (.m3u8) streams
+- **Smart Lock Coordination**: Prevents conflicts between user previews and automated feed checking (single-connection authentication)
+- **Real-Time Stream Metadata**: View resolution, frame rate, codec, reliability score, and quality badges (4K/FHD/HD/SD) while watching
+- **Secure Streaming**: HTTPS proxy handles mixed content issues transparently
+- **System-Wide Availability**: Preview buttons available throughout the application - reports, feed history, channel pages
+- **Rapid Switching**: Optimized for quick preview workflows when evaluating multiple streams
+
 ### User Management
 - **Multi-user support** – Create accounts for team members with individual credentials
 - **Security monitoring** – Track login attempts and identify suspicious activity
@@ -152,7 +161,7 @@ Adjust frequency based on your playlist size and server capacity.
 
 - **[INSTALL.md](INSTALL.md)** - Installation and upgrade guide
 - **[SECURITY.md](SECURITY.md)** - Security best practices
-- **[RELEASE_NOTES_1.4.md](RELEASE_NOTES_1.4.md)** - Version 1.4 release notes
+- **[RELEASE_NOTES_1.5.md](RELEASE_NOTES_1.5.md)** - Version 1.5 release notes
 
 ---
 
@@ -168,15 +177,19 @@ Browse and filter all monitored feeds
 
 ### Channel Detail
 View all feeds for a channel, ranked by quality
-![Channel Report](images/single_channel.png)
+![Channel Detail](images/single_channel.png)
 
 ### Feed History
-View all feeds for a channel, ranked by quality
-![Channel Report](images/feed_history.png)
+View historical data on feed performance
+![Feed History](images/feed_history.png)
 
 ### Reports
 Analyze entire categories and find better feed alternatives
-![Group Audit](images/reports.png)
+![Reports and Audits](images/reports.png)
+
+### Native Stream Player
+Instantly preview any stream with the built-in player. Optimized for rapid feed switching.
+![Native Stream Player](images/player.png)
 
 ---
 
@@ -192,6 +205,8 @@ Analyze entire categories and find better feed alternatives
 - **settings** - Application configuration
 - **users** - Authentication and user management
 - **login_attempts** - Security logging and rate limiting
+- **stream_preview_lock** - Mutex coordination table for stream preview system
+- **feed_id_mapping** - URL hash mapping table for feed ID persistence across playlist imports
 
 ### Feed Checking Logic
 1. Queue selects next batch of due feeds
@@ -293,6 +308,6 @@ Contributions welcome! Please:
 
 ---
 
-**Current Version:** 1.4  
+**Current Version:** 1.5  
 **Release Date:** December 2025  
-**Previous Version:** 1.3 (December 2025)
+**Previous Version:** 1.4 (December 2025)

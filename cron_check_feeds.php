@@ -3,9 +3,9 @@
 declare(strict_types=1);
 require __DIR__ . '/db.php';
 
-ini_set('display_errors', '0');           // Don't show errors on screen
-ini_set('log_errors', '1');               // Enable error logging
-error_reporting(E_ALL);                   // Report all errors
+ini_set('display_errors', '0');
+ini_set('log_errors', '1');
+error_reporting(E_ALL);
 
 function uuidv4(): string
 {
@@ -116,6 +116,54 @@ function next_run_for_failure(int $attempts): int
 $pdo = db();
 $token = uuidv4();
 
+// ============================================================================
+// STREAM PREVIEW LOCK CHECK
+// Skip feed checks if a user is actively previewing a stream
+// ============================================================================
+
+try {
+	// Clean up any stale stream preview locks (older than 30 seconds without heartbeat)
+	$deletedLocks = $pdo->exec("
+		DELETE FROM stream_preview_lock 
+		WHERE last_heartbeat < DATE_SUB(NOW(), INTERVAL 30 SECOND)
+	");
+
+	// Check for active stream preview
+	$lockCount = $pdo->query("
+		SELECT COUNT(*) 
+		FROM stream_preview_lock 
+		WHERE last_heartbeat >= DATE_SUB(NOW(), INTERVAL 30 SECOND)
+	")->fetchColumn();
+
+	if ($lockCount > 0) {
+		// Get lock details for logging
+		$lockDetails = $pdo->query("
+			SELECT feed_id, channel_name, locked_by, 
+			       TIMESTAMPDIFF(SECOND, last_heartbeat, NOW()) as seconds_since_heartbeat
+			FROM stream_preview_lock 
+			WHERE last_heartbeat >= DATE_SUB(NOW(), INTERVAL 30 SECOND)
+			LIMIT 1
+		")->fetch(PDO::FETCH_ASSOC);
+
+		$message = sprintf(
+			"Feed Check Cron: Skipping - active stream preview detected (Feed ID: %d, Channel: %s, Session: %s, Heartbeat: %ds ago)",
+			$lockDetails['feed_id'] ?? 0,
+			$lockDetails['channel_name'] ?? 'Unknown',
+			substr($lockDetails['locked_by'] ?? 'unknown', 0, 8),
+			$lockDetails['seconds_since_heartbeat'] ?? 0
+		);
+		error_log($message);
+		exit(0);
+	}
+} catch (Throwable $e) {
+	// If stream_preview_lock table doesn't exist yet, continue normally
+	error_log("Feed Check Cron: Stream preview lock check failed (table may not exist): " . $e->getMessage());
+}
+
+// ============================================================================
+// PROCEED WITH NORMAL FEED CHECKING
+// ============================================================================
+
 // Claim work (simple lock)
 $pdo->beginTransaction();
 
@@ -156,12 +204,53 @@ $lockSt = $pdo->prepare("
 $lockSt->execute(array_merge([$token], $ids));
 $pdo->commit();
 
+// Track processing stats
+$processedCount = 0;
+$successCount = 0;
+$failCount = 0;
+$startTime = microtime(true);
+
 // Process
 foreach ($rows as $r) {
+	// ========================================================================
+	// RE-CHECK FOR STREAM PREVIEW LOCK BEFORE EACH FEED
+	// If a preview started mid-cycle, stop immediately to avoid conflicts
+	// ========================================================================
+	try {
+		$lockRecheckCount = $pdo->query("
+			SELECT COUNT(*) 
+			FROM stream_preview_lock 
+			WHERE last_heartbeat >= DATE_SUB(NOW(), INTERVAL 30 SECOND)
+		")->fetchColumn();
+
+		if ($lockRecheckCount > 0) {
+
+			// Release all locks we acquired for this batch
+			$releaseLocks = $pdo->prepare("
+				UPDATE feed_check_queue
+				SET locked_at = NULL, lock_token = NULL
+				WHERE lock_token = :token
+			");
+			$releaseLocks->execute([':token' => $token]);
+
+			exit(0); // Exit cleanly
+		}
+	} catch (Throwable $e) {
+		// Continue if table doesn't exist
+	}
+	// ========================================================================
+
 	$feedId = (int)$r['feed_id'];
 	$url = (string)$r['url'];
 
 	$res = probeStreamWithFFprobe($url, 12);
+	$processedCount++;
+
+	if ($res['ok']) {
+		$successCount++;
+	} else {
+		$failCount++;
+	}
 
 	// write history row
 	$ins = $pdo->prepare("
@@ -245,3 +334,19 @@ foreach ($rows as $r) {
 		]);
 	}
 }
+
+// ============================================================================
+// SUMMARY LOGGING (OPTIONAL - OFF BY DEFAULT)
+// ============================================================================
+
+$duration = round(microtime(true) - $startTime, 2);
+$summary = sprintf(
+	"Feed Check Cron: Completed - %d feeds processed (%d successful, %d failed) in %.2fs (avg %.2fs per feed)",
+	$processedCount,
+	$successCount,
+	$failCount,
+	$duration,
+	$processedCount > 0 ? round($duration / $processedCount, 2) : 0
+);
+
+// error_log($summary);

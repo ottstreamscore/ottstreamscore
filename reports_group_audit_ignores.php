@@ -26,7 +26,7 @@ try {
 } catch (Throwable $e) {
 	// Table doesn't exist, return error
 	echo json_encode([
-		'error' => 'Ignores table not found. Please run migration: migration_group_audit.sql'
+		'error' => 'Ignores table not found. Please run migration: migrate.php'
 	]);
 	exit;
 }

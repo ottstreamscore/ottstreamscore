@@ -3,20 +3,20 @@
 declare(strict_types=1);
 
 ob_start();
-ini_set('display_errors', '0');           // Don't show errors on screen
-ini_set('log_errors', '1');               // Enable error logging
-error_reporting(E_ALL);                   // Report all errors
+ini_set('display_errors', '0');
+ini_set('log_errors', '1');
+error_reporting(E_ALL);
+
+require_once __DIR__ . '/_boot.php';
+
+if (!is_logged_in()) {
+	header('Content-Type: application/json');
+	http_response_code(401);
+	echo json_encode(['error' => 'Unauthorized']);
+	exit;
+}
 
 try {
-	require_once __DIR__ . '/_boot.php';
-
-	if (!is_logged_in()) {
-		header('Content-Type: application/json');
-		http_response_code(401);
-		echo json_encode(['error' => 'Unauthorized']);
-		exit;
-	}
-
 	$pdo = db();
 
 	header('Content-Type: application/json; charset=utf-8');

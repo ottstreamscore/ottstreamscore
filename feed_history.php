@@ -209,6 +209,10 @@ if (!function_exists('res_badge')) {
 	.breadcrumb {
 		font-size: 10pt;
 	}
+
+	div.dataTables_wrapper div.dataTables_filter label {
+		margin-left: 10px;
+	}
 </style>
 
 
@@ -227,8 +231,12 @@ if (!function_exists('res_badge')) {
 		<div class="h2 mb-1">
 			<?= h($displayName) ?>
 			<button type="button" class="btn btn-outline-primary btn-sm ms-3" id="manualCheckBtn" style="position:relative; top:-4px;">
-				<i class="fa-solid fa-rotate"></i> Initiate Feed Check
+				<i class="fa-solid fa-rotate me-1"></i> Initiate Feed Check
 			</button>
+			<button type="button" class="btn btn-outline-success btn-sm ms-3 btn-preview" data-feed-id="<?= $feedId ?>" style="position:relative; top:-4px;">
+				<i class="fa-solid fa-play me-1"></i> Preview Feed
+			</button>
+
 		</div>
 		<div class="text-muted">
 			<span class="me-3"><span class="text-muted">Group:</span> <?= h($displayGroup) ?></span>
@@ -625,7 +633,7 @@ if (!function_exists('res_badge')) {
 				fps,
 				codec,
 				`<span class="error-cell text-muted" title="${error}">${error}</span>`
-			]).draw(true); // Use true to reset pagination and maintain sort order
+			]).draw(true);
 		}
 	});
 </script>

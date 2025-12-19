@@ -39,6 +39,10 @@ $groups = $pdo->query("
 		display: none;
 	}
 
+	div.dataTables_wrapper div.dataTables_filter {
+		display: none !important;
+	}
+
 	.quick-filter.active {
 		pointer-events: none;
 	}
@@ -80,6 +84,10 @@ $groups = $pdo->query("
 		border-left-color: #6c757d;
 	}
 
+	.audit-card.status-failed {
+		border-left-color: #dc3545;
+	}
+
 	.status-indicator {
 		width: 12px;
 		height: 12px;
@@ -98,6 +106,10 @@ $groups = $pdo->query("
 
 	.status-no-data .status-indicator {
 		background-color: #6c757d;
+	}
+
+	.status-failed .status-indicator {
+		background-color: #dc3545;
 	}
 
 	.alternative-feed {
@@ -332,8 +344,9 @@ $groups = $pdo->query("
 	</div>
 </div>
 
+
 <script>
-	// FEED REPORT (Original functionality)
+	// FEED REPORT 
 	let quickMode = '';
 
 	function getFilters() {
@@ -367,7 +380,7 @@ $groups = $pdo->query("
 					text: '<i class="fa-solid fa-copy me-1"></i> Copy',
 					className: 'btn btn-outline-secondary btn-sm',
 					exportOptions: {
-						columns: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] // Skip hidden columns
+						columns: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 					}
 				},
 				{
@@ -375,7 +388,7 @@ $groups = $pdo->query("
 					text: '<i class="fa-solid fa-file-csv me-1"></i> Export CSV',
 					className: 'btn btn-outline-secondary btn-sm',
 					exportOptions: {
-						columns: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] // Skip hidden columns
+						columns: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 					}
 				}
 			],
@@ -481,7 +494,7 @@ $groups = $pdo->query("
 		setQuickActive('');
 	});
 
-	// GROUP AUDIT functionality
+	// GROUP AUDIT 
 	let currentAuditGroup = '';
 
 	// Show/hide custom date range
@@ -552,11 +565,13 @@ $groups = $pdo->query("
 		// Summary
 		const optimal = channels.filter(c => c.status === 'optimal').length;
 		const suboptimal = channels.filter(c => c.status === 'suboptimal').length;
+		const failed = channels.filter(c => c.status === 'failed').length;
 		const noData = channels.filter(c => c.status === 'no_data').length;
 
 		$('#audit_summary').html(`
 			<span class="badge bg-success">${optimal} Optimal</span>
 			<span class="badge bg-warning text-dark">${suboptimal} Needs Review</span>
+			<span class="badge bg-danger">${failed} Failed</span>
 			<span class="badge bg-secondary">${noData} No Data</span>
 		`);
 
@@ -576,18 +591,22 @@ $groups = $pdo->query("
 	function buildChannelCard(channel, sourceGroup) {
 		const statusClass = 'status-' + channel.status;
 		const statusText = channel.status === 'optimal' ? 'Using Best Feed' :
-			channel.status === 'suboptimal' ? 'Better Feeds Available' : 'No Data';
+			channel.status === 'suboptimal' ? 'Better Feeds Available' :
+			channel.status === 'failed' ? 'Feed Failed' : 'No Data';
 
 		let currentFeedHtml = '';
 		if (channel.current_feed_id) {
 			currentFeedHtml = `
 				<div class="d-flex align-items-center gap-2 mb-2">
 					<span class="badge bg-primary">Score: ${channel.current_score}/100</span>
-					<span class="badge bg-info">${channel.current_resolution}</span>
+					${channel.current_class_badge}
 					<span class="text-muted small">Rel: ${channel.current_reliability}% • Res: ${channel.current_res_display} • FPS: ${channel.current_fps} • Checks: ${channel.current_check_count}</span>
 					<a href="feed_history.php?feed_id=${channel.current_feed_id}" class="btn btn-sm btn-outline-primary" target="_blank" title="View current feed history" style="font-size: 0.75rem; padding: 0.15rem 0.35rem;">
-						<i class="fa-solid fa-clock-rotate-left"></i>
+						<i class="fa-solid fa-clock-rotate-left"></i> History
 					</a>
+					<button class="btn btn-sm btn-outline-success btn-preview" data-feed-id="${channel.current_feed_id}" title="Preview Stream" style="font-size: 0.75rem; padding: 0.15rem 0.35rem;">
+						<i class="fa-solid fa-play"></i> Preview
+					</button>
 				</div>
 			`;
 		}
@@ -604,10 +623,13 @@ $groups = $pdo->query("
 							<a href="feed_history.php?feed_id=${alt.feed_id}" class="btn btn-sm btn-outline-primary ms-2" target="_blank" title="View feed history" style="font-size: 0.75rem; padding: 0.15rem 0.35rem;">
 								<i class="fa-solid fa-clock-rotate-left"></i>
 							</a>
+							<button class="btn btn-sm btn-outline-success btn-preview ms-1" data-feed-id="${alt.feed_id}" title="Preview Stream" style="font-size: 0.75rem; padding: 0.15rem 0.35rem;">
+								<i class="fa-solid fa-play"></i>
+							</button>
 							<div class="text-muted small">
 								Score: <strong>${alt.score}/100</strong> •
 								Rel: ${alt.reliability}% • 
-								${alt.resolution} (${alt.res_display}) •
+								${alt.class_badge} (${alt.res_display}) •
 								FPS: ${alt.fps} •
 								${alt.check_count} checks
 							</div>

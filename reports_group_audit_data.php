@@ -69,6 +69,17 @@ try {
 		return 'SD';
 	}
 
+	function get_class_badge(string $class): string
+	{
+		return match ($class) {
+			'4K'  => '<span class="badge bg-warning text-dark">4K</span>',
+			'FHD' => '<span class="badge bg-primary">FHD</span>',
+			'HD'  => '<span class="badge bg-info text-dark">HD</span>',
+			'SD'  => '<span class="badge bg-secondary">SD</span>',
+			default => '<span class="badge bg-light text-dark">—</span>',
+		};
+	}
+
 	// === SCHEMA DETECTION ===
 	$hasJunctionTable = false;
 	try {
@@ -130,13 +141,13 @@ try {
 	// === GET ALL UNIQUE TVG_IDS IN THIS GROUP ===
 	$tvgIds = [];
 	$st = $pdo->prepare("
-	SELECT DISTINCT c.tvg_id, c.tvg_name, c.tvg_logo
-	FROM channels c
-	WHERE c.group_title = :group
-	  AND c.tvg_id IS NOT NULL
-	  AND c.tvg_id <> ''
-	ORDER BY c.tvg_name
-");
+		SELECT DISTINCT c.tvg_id, c.tvg_name, c.tvg_logo
+		FROM channels c
+		WHERE c.group_title = :group
+		AND c.tvg_id IS NOT NULL
+		AND c.tvg_id <> ''
+		ORDER BY c.tvg_name
+	");
 	$st->execute([':group' => $group]);
 	$channelsInGroup = $st->fetchAll(PDO::FETCH_ASSOC);
 
@@ -315,13 +326,15 @@ try {
 			}
 
 			if ($feedScore > $currentScore && !$isIgnored) {
+				$altResClass = res_class((int)$feed['avg_w'], (int)$feed['avg_h']);
 				$alternatives[] = [
 					'group' => $feed['group_title'],
 					'tvg_name' => $feed['tvg_name'],
 					'feed_id' => $feed['feed_id'],
 					'score' => $feedScore,
 					'reliability' => round((float)$feed['avg_reliability'], 1),
-					'resolution' => res_class((int)$feed['avg_w'], (int)$feed['avg_h']),
+					'resolution' => $altResClass,
+					'class_badge' => get_class_badge($altResClass),
 					'res_display' => round((float)$feed['avg_w']) . '×' . round((float)$feed['avg_h']),
 					'fps' => round((float)$feed['avg_fps'], 2),
 					'check_count' => $feed['check_count'],
@@ -342,9 +355,13 @@ try {
 		$status = 'optimal'; // green
 		if (!$currentBest) {
 			$status = 'no_data'; // gray
+		} elseif ($currentBest && (int)$currentBest['last_ok'] === 0) {
+			$status = 'failed'; // red - current feed is failing
 		} elseif (count($alternatives) > 0) {
 			$status = 'suboptimal'; // yellow/orange
 		}
+
+		$currentResClass = $currentBest ? res_class((int)$currentBest['avg_w'], (int)$currentBest['avg_h']) : 'Unknown';
 
 		$results[] = [
 			'tvg_id' => $tvgId,
@@ -354,7 +371,8 @@ try {
 			'current_score' => $currentScore,
 			'current_feed_id' => $currentBest ? $currentBest['feed_id'] : null,
 			'current_reliability' => $currentBest ? round((float)$currentBest['avg_reliability'], 1) : null,
-			'current_resolution' => $currentBest ? res_class((int)$currentBest['avg_w'], (int)$currentBest['avg_h']) : null,
+			'current_resolution' => $currentResClass,
+			'current_class_badge' => get_class_badge($currentResClass),
 			'current_res_display' => $currentBest ? round((float)$currentBest['avg_w']) . '×' . round((float)$currentBest['avg_h']) : null,
 			'current_fps' => $currentBest ? round((float)$currentBest['avg_fps'], 2) : null,
 			'current_check_count' => $currentBest ? $currentBest['check_count'] : 0,

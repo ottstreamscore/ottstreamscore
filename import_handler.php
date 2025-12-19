@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-ini_set('display_errors', '0');           // Don't show errors on screen
-ini_set('log_errors', '1');               // Enable error logging
-error_reporting(E_ALL);                   // Report all errors
+ini_set('display_errors', '0');
+ini_set('log_errors', '1');
+error_reporting(E_ALL);
 
 require_once __DIR__ . '/_boot.php';
 
@@ -21,11 +21,56 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 	@session_start();
 }
 
+$isAjax = isset($_POST['_ajax']) && $_POST['_ajax'] === '1';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['action'])) {
+	$playlistDir = __DIR__ . '/playlists';
+	$playlistFiles = glob($playlistDir . '/*.{m3u,m3u8}', GLOB_BRACE);
+
+	if (empty($playlistFiles)) {
+		if ($isAjax) {
+			header('Content-Type: application/json');
+			echo json_encode([
+				'success' => false,
+				'ok' => false,
+				'error' => 'No playlist file found. Please upload a playlist first.'
+			]);
+			exit;
+		} else {
+			$_SESSION['flash'] = [
+				'ok' => false,
+				'message' => 'No playlist file found. Please upload a playlist first.'
+			];
+			header('Location: admin.php?tab=playlist');
+			exit;
+		}
+	}
+
+	$playlistPath = $playlistFiles[0];
+	$_POST['playlist'] = basename($playlistPath);
+	$_POST['directory'] = 'playlists';
+}
+
 function redirect_back(array $flash): void
 {
-	$_SESSION['playlist_flash'] = $flash;
-	header('Location: admin.php?tab=playlist');
-	exit;
+	global $isAjax;
+
+	if ($isAjax) {
+		header('Content-Type: application/json');
+		echo json_encode([
+			'success' => $flash['ok'],
+			'ok' => $flash['ok'],
+			'status' => $flash['ok'] ? 'completed' : 'error',
+			'message' => $flash['message'] ?? '',
+			'stats' => $flash['stats'] ?? null,
+			'error' => !$flash['ok'] ? ($flash['message'] ?? 'Unknown error') : null
+		]);
+		exit;
+	} else {
+		$_SESSION['playlist_flash'] = $flash;
+		header('Location: admin.php?tab=playlist');
+		exit;
+	}
 }
 
 function cut(string $s, int $max): string
@@ -74,8 +119,7 @@ try {
 
 	$playlistBase = cut((string)($_POST['playlist'] ?? ''), 255);
 	$directory = cut((string)($_POST['directory'] ?? '.'), 255);
-	$mode = cut((string)($_POST['mode'] ?? 'sync'), 30);
-	if (!in_array($mode, ['sync', 'insert_only'], true)) $mode = 'sync';
+	$mode = 'sync';
 
 	// Sanitize directory - only allow safe characters
 	$directory = preg_replace('/[^a-zA-Z0-9\/_-]/', '', $directory);
@@ -270,12 +314,11 @@ try {
 		}
 	}
 
-	// Update feed (only update url/display, no channel_id in new schema)
+	// Update feed
 	if ($hasUrlDisplayCol) {
 		$stUpdateFeed = $pdo->prepare("
 			UPDATE feeds
-			SET url = :url,
-			    url_display = :url_display
+			SET url = :url, url_display = :url_display
 			WHERE id = :id
 		");
 	} else {
@@ -286,7 +329,7 @@ try {
 		");
 	}
 
-	// Junction table statements
+	// Junction table operations
 	if ($hasJunctionTable) {
 		$stFindChannelFeed = $pdo->prepare("
 			SELECT 1 FROM channel_feeds
@@ -295,7 +338,7 @@ try {
 		");
 
 		$stInsertChannelFeed = $pdo->prepare("
-			INSERT INTO channel_feeds (channel_id, feed_id)
+			INSERT IGNORE INTO channel_feeds (channel_id, feed_id)
 			VALUES (:channel_id, :feed_id)
 		");
 
@@ -409,8 +452,8 @@ try {
 		$feedId = 0;
 		$currentChannelFeedId = 0;
 
-		// In SYNC mode with junction table: find feed by channel association first
-		if ($mode === 'sync' && $hasJunctionTable) {
+		// With junction table: find feed by channel association first
+		if ($hasJunctionTable) {
 			// Find existing feed for this channel
 			$stFindByChannel = $pdo->prepare("
 				SELECT f.id FROM feeds f
@@ -436,19 +479,14 @@ try {
 				// The old association will be cleaned up by the stale deletion
 				$feedsUpdated++;
 			} else {
-				// Same feed, just mark as skipped or updated
-				if ($mode === 'insert_only') {
-					$feedsSkippedExisting++;
-				} else {
-					// Could update url_display if needed
-					if ($hasUrlDisplayCol) {
-						$params = [
-							':url_display' => basename(parse_url($url, PHP_URL_PATH) ?: $url),
-							':id' => $feedId,
-						];
-						$pdo->prepare("UPDATE feeds SET url_display = :url_display WHERE id = :id")
-							->execute($params);
-					}
+				// Same feed, update url_display if needed
+				if ($hasUrlDisplayCol) {
+					$params = [
+						':url_display' => basename(parse_url($url, PHP_URL_PATH) ?: $url),
+						':id' => $feedId,
+					];
+					$pdo->prepare("UPDATE feeds SET url_display = :url_display WHERE id = :id")
+						->execute($params);
 				}
 			}
 		} elseif ($currentChannelFeedId > 0) {
@@ -554,7 +592,7 @@ try {
 
 	$stats = [
 		'Playlist file' => $playlistBase,
-		'Mode' => $mode === 'sync' ? 'Sync (insert + update)' : 'Insert only (skip existing)',
+		'Mode' => 'Sync',
 		'Schema' => $hasJunctionTable ? 'Junction table (many-to-many)' : 'Legacy (one-to-one)',
 		'Lines read' => number_format($lines),
 		'EXTINF entries' => number_format($extinf),
@@ -580,7 +618,7 @@ try {
 
 	redirect_back([
 		'ok' => true,
-		'message' => "Sync complete. You can safely run this again whenever your playlist changes. REMOVE YOUR PLAYLIST FROM THE SERVER!",
+		'message' => "Sync complete. You can safely run this again whenever your playlist changes.",
 		'stats' => $stats,
 	]);
 } catch (Throwable $e) {

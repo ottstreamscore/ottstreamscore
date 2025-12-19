@@ -2,14 +2,14 @@
 
 /**
  * migrate.php
- * Database migration script for OTT Stream Score
+ * Database migration script for OTT Stream Score to version 1.5
  * 
  * FOR USERS UPGRADING FROM v1.3 OR LATER ONLY
  * 
  * If you're upgrading from a version BEFORE v1.3:
  * Please read the install.md file included in version 1.3 for specific migration instructions.
  * 
- * This script adds the login_attempts table required for authentication rate limiting.
+ * This script adds tables required post v1.3
  */
 
 declare(strict_types=1);
@@ -133,6 +133,117 @@ try {
 	$migrations[] = [
 		'status' => 'error',
 		'message' => "Failed to create login_attempts table: " . $e->getMessage()
+	];
+}
+
+// Migration 2: Create feed_id_mapping table
+try {
+	$result = $pdo->query("SHOW TABLES LIKE 'feed_id_mapping'");
+	$table_exists = $result->rowCount() > 0;
+
+	if (!$table_exists) {
+		$sql = "CREATE TABLE `feed_id_mapping` (
+			`old_feed_id` BIGINT(20) UNSIGNED NOT NULL,
+			`url_hash` VARCHAR(40) NOT NULL,
+			`url` TEXT NOT NULL,
+			PRIMARY KEY (`old_feed_id`),
+			KEY `idx_url_hash` (`url_hash`)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci";
+
+		$pdo->exec($sql);
+		$migrations[] = [
+			'status' => 'success',
+			'message' => 'Created feed_id_mapping table'
+		];
+	} else {
+		$migrations[] = [
+			'status' => 'skipped',
+			'message' => 'feed_id_mapping table already exists'
+		];
+	}
+} catch (PDOException $e) {
+	$migrations[] = [
+		'status' => 'error',
+		'message' => "Failed to create feed_id_mapping table: " . $e->getMessage()
+	];
+}
+
+// Migration 3: Create stream_preview_lock table
+try {
+	$result = $pdo->query("SHOW TABLES LIKE 'stream_preview_lock'");
+	$table_exists = $result->rowCount() > 0;
+
+	if (!$table_exists) {
+		$sql = "CREATE TABLE `stream_preview_lock` (
+			`id` INT(11) NOT NULL AUTO_INCREMENT,
+			`locked_by` VARCHAR(100) NOT NULL COMMENT 'Session ID of the user previewing',
+			`locked_at` DATETIME NOT NULL COMMENT 'When the lock was acquired',
+			`last_heartbeat` DATETIME NOT NULL COMMENT 'Last heartbeat timestamp',
+			`feed_id` INT(11) NOT NULL COMMENT 'Feed ID being previewed',
+			`channel_name` VARCHAR(255) DEFAULT NULL COMMENT 'Channel name for reference',
+			PRIMARY KEY (`id`),
+			UNIQUE KEY `single_lock` (`id`),
+			KEY `idx_heartbeat` (`last_heartbeat`),
+			KEY `idx_session` (`locked_by`)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+
+		$pdo->exec($sql);
+		$migrations[] = [
+			'status' => 'success',
+			'message' => 'Created stream_preview_lock table'
+		];
+	} else {
+		$migrations[] = [
+			'status' => 'skipped',
+			'message' => 'stream_preview_lock table already exists'
+		];
+	}
+} catch (PDOException $e) {
+	$migrations[] = [
+		'status' => 'error',
+		'message' => "Failed to create stream_preview_lock table: " . $e->getMessage()
+	];
+}
+
+// Create playlists directory
+$playlistsDir = __DIR__ . '/playlists';
+if (!file_exists($playlistsDir)) {
+	if (mkdir($playlistsDir, 0700, true)) {
+		$migrations[] = [
+			'status' => 'success',
+			'message' => 'Created playlists directory'
+		];
+	} else {
+		$migrations[] = [
+			'status' => 'error',
+			'message' => 'Failed to create playlists directory'
+		];
+	}
+} else {
+	$migrations[] = [
+		'status' => 'skipped',
+		'message' => 'playlists directory already exists'
+	];
+}
+
+// Create index.php protection file
+$indexFile = $playlistsDir . '/index.php';
+if (!file_exists($indexFile)) {
+	if (file_put_contents($indexFile, "<?php\nhttp_response_code(403);\ndie('Access denied');\n")) {
+		$migrations[] = [
+			'status' => 'success',
+			'message' => 'Created playlists/index.php protection file'
+		];
+	} else {
+		$migrations[] = [
+			'status' => 'error',
+			'message' => 'Failed to create playlists/index.php protection file'
+		];
+	}
+} else {
+	$migrations[] = [
+		'status' => 'skipped',
+		'message' => 'playlists/index.php already exists'
 	];
 }
 
@@ -361,7 +472,7 @@ if ($is_cli) {
 		<div class="container">
 			<div class="header">
 				<h1><?php echo $has_errors ? '⚠️ Migration Errors' : '✅ Migration Complete'; ?></h1>
-				<p>OTT Stream Score v1.3+</p>
+				<p>OTT Stream Score v1.5</p>
 			</div>
 
 			<div class="content">
@@ -380,14 +491,7 @@ if ($is_cli) {
 				<?php if (!$has_errors): ?>
 					<div class="info-box">
 						<h3>🎉 Your database has been updated!</h3>
-						<p>The login_attempts table has been successfully created. This enables enhanced security features including:</p>
-						<ul style="margin: 10px 0 0 20px; color: #6c757d; font-size: 14px;">
-							<li>Rate limiting for login attempts</li>
-							<li>Account lockout protection</li>
-							<li>Failed login attempt tracking</li>
-						</ul>
 					</div>
-
 					<a href="admin.php?tab=users" class="btn">Go to User Management</a>
 				<?php else: ?>
 					<div class="warning-box">

@@ -13,11 +13,13 @@ declare(strict_types=1);
 	<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.10/css/dataTables.bootstrap5.min.css">
 	<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+	<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 	<script src="https://cdn.jsdelivr.net/npm/datatables.net@1.13.10/js/jquery.dataTables.min.js"></script>
 	<script src="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.10/js/dataTables.bootstrap5.min.js"></script>
 	<script src="https://cdn.datatables.net/buttons/2.4.2/js/dataTables.buttons.min.js"></script>
 	<script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.html5.min.js"></script>
-
+	<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+	<script src="https://cdn.jsdelivr.net/npm/mpegts.js@latest"></script>
 
 	<script>
 		// Apply saved theme 
@@ -32,7 +34,7 @@ declare(strict_types=1);
 		CSS VARIABLES
 		============================================================================ */
 
-		/* Light mode (default) */
+		/* Light mode */
 		:root {
 			--bg-primary: #ffffff;
 			--bg-secondary: #f8f9fa;
@@ -48,7 +50,7 @@ declare(strict_types=1);
 			--logo-background: #a0a0a0;
 		}
 
-		/* Dark mode */
+		/* Dark mode (default) */
 		[data-bs-theme="dark"] {
 			--bg-primary: #212529;
 			--bg-secondary: #343a40;
@@ -229,7 +231,6 @@ declare(strict_types=1);
 
 		div.dt-buttons {
 			display: inline-block;
-			margin-right: 10px;
 		}
 
 		div.dataTables_wrapper div.dataTables_filter {

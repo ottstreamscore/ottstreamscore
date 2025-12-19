@@ -27,6 +27,10 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 $flash = $_SESSION['playlist_flash'] ?? null;
 unset($_SESSION['playlist_flash']);
 
+/* ============================================================================
+PLAYLIST IMPORT HELPERS
+============================================================================ */
+
 // Get base directory (application root)
 $baseDir = __DIR__;
 
@@ -90,6 +94,10 @@ function file_label(string $path): string
 	$mtimeTxt = $mtime ? date('Y-m-d H:i:s', $mtime) : '—';
 	return "{$base}  ({$sizeTxt}, updated {$mtimeTxt})";
 }
+
+/* ============================================================================
+HANDLE FORM SUBMISSIONS
+============================================================================ */
 
 // Handle form submissions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -378,7 +386,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 	}
 }
 
-// Get current settings
+/* ============================================================================
+GET SAVED CONFIG FORM DATABASE
+============================================================================ */
+
 $settings = get_all_settings();
 $settings_map = [];
 foreach ($settings as $setting) {
@@ -837,13 +848,10 @@ if (file_exists($bootstrap_file)) {
 					<div>
 						<h2 class="admin_section"><i class="fa-solid fa-rotate me-1"></i> Sync Playlist</h2>
 						<div class="text-muted">
-							This tool <strong>syncs</strong> a playlist into your database and can be run any time you update/replace your .m3u file.
-							It only imports <strong>LIVE</strong> entries (URLs containing <code>/live/</code>).
+							Upload and sync your M3U playlist into the database. Only imports <strong>LIVE</strong> entries (URLs containing <code>/live/</code>).
 						</div>
 					</div>
 				</div>
-
-				<div class="alert alert-warning">🔒 Important: Do not store playlists in web accessible directories. Playlists contain sensitive URLs and <strong>should not</strong> be accessible via browser.</div>
 
 				<?php if ($flash): ?>
 					<div class="alert alert-<?= h($flash['ok'] ? 'success' : 'danger') ?> shadow-sm">
@@ -868,81 +876,346 @@ if (file_exists($bootstrap_file)) {
 					</div>
 				<?php endif; ?>
 
-				<div class="card shadow-sm">
+				<!-- Upload Section -->
+				<div class="card shadow-sm mb-3" id="upload-section">
+					<div class="card-header fw-semibold"><i class="fa-solid fa-cloud-arrow-up me-1"></i> Upload Playlist</div>
+					<div class="card-body">
+						<div class="mb-3">
+							<input type="file" id="playlist-file" accept=".m3u,.m3u8" style="display:none;">
+							<button type="button" class="btn btn-primary" id="select-file-btn">
+								<i class="fa-solid fa-file me-1"></i> Select Playlist File
+							</button>
+							<button type="button" class="btn btn-success" id="upload-btn" style="display:none;">
+								<i class="fa-solid fa-upload me-1"></i> Upload Playlist
+							</button>
+							<span id="selected-file-name" class="ms-2 text-muted"></span>
+						</div>
+
+						<!-- Upload Progress -->
+						<div id="upload-progress-container" style="display:none;">
+							<div class="progress" style="height: 25px;">
+								<div id="upload-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated"
+									role="progressbar" style="width: 0%;">0%</div>
+							</div>
+							<div id="upload-status" class="text-muted small mt-2"></div>
+						</div>
+
+						<div class="alert alert-info small mt-3 mb-0">
+							<i class="fa-solid fa-info-circle me-1"></i>
+							Supports large playlist files (80MB+). Upload happens in the background with progress tracking.
+						</div>
+					</div>
+				</div>
+
+				<!-- Import Section -->
+				<div class="card shadow-sm mb-3" id="import-section" style="display:none;">
 					<div class="card-header fw-semibold"><i class="fa-solid fa-file-import me-1"></i> Import Playlist</div>
 					<div class="card-body">
 
-						<!-- Directory Selector -->
-						<div class="mb-4">
-							<label class="form-label">Select Directory</label>
-							<select id="dir-selector" class="form-select" onchange="window.location.href='admin.php?tab=playlist&dir=' + this.value">
-								<?php foreach ($availableDirs as $dir): ?>
-									<?php
-									$displayDir = $dir === '.' ? 'Current Directory (' . basename($baseDir) . ')' : $dir;
-									$selected = $dir === $selectedDir ? 'selected' : '';
-									?>
-									<option value="<?= h($dir) ?>" <?= $selected ?>><?= h($displayDir) ?></option>
-								<?php endforeach; ?>
-							</select>
-							<div class="form-text">
-								<i class="fa-solid fa-folder me-1"></i> Currently viewing: <code><?= h($fullDir) ?></code>
-							</div>
+						<!-- Playlist Info -->
+						<div id="playlist-info" class="alert alert-secondary">
+							<!-- Populated by JavaScript -->
 						</div>
 
-						<?php if (!$files): ?>
-							<div class="alert alert-warning mb-0">
-								<i class="fa-solid fa-triangle-exclamation me-2"></i>
-								No <code>.m3u</code> files found in: <code><?= h($fullDir) ?></code><br>
-								Upload a playlist file to this directory and refresh the page.
+						<div class="mb-3">
+							<button type="button" class="btn btn-success" id="start-import-btn">
+								<i class="fa-solid fa-arrows-rotate me-1"></i> Sync Playlist
+							</button>
+							<button type="button" class="btn btn-danger" id="remove-playlist-btn">
+								<i class="fa-solid fa-trash me-1"></i> Remove Playlist
+							</button>
+						</div>
+
+						<!-- Import Processing Indicator -->
+						<div id="import-processing-container" style="display:none;" class="mt-4 text-center">
+							<div class="mb-3">
+								<i class="fa-solid fa-spinner fa-spin fa-3x text-primary"></i>
 							</div>
-						<?php else: ?>
+							<div class="h5 text-muted">Processing playlist...</div>
+							<div class="small text-muted">This may take a few moments for large playlists</div>
+						</div>
 
-							<form method="post" action="import_handler.php" class="row g-3">
-								<input type="hidden" name="directory" value="<?= h($selectedDir) ?>">
-
-								<div class="col-lg-8">
-									<label class="form-label">Playlist File</label>
-									<select name="playlist" class="form-select" required>
-										<?php foreach ($files as $full): ?>
-											<?php
-											$base = basename($full);
-											$size = filesize($full);
-											$sizeStr = $size ? ' (' . number_format($size / 1024, 1) . ' KB)' : '';
-											?>
-											<option value="<?= h($base) ?>"><?= h($base . $sizeStr) ?></option>
-										<?php endforeach; ?>
-									</select>
-									<div class="form-text">
-										Found <?= count($files) ?> playlist file(s) in selected directory
-									</div>
-								</div>
-
-								<div class="col-lg-4">
-									<label class="form-label">Import Mode</label>
-									<select name="mode" class="form-select">
-										<option value="sync" selected>Sync (update all)</option>
-										<option value="insert_only">Insert Only (skip existing)</option>
-									</select>
-									<div class="form-text">
-										Sync mode updates existing feeds
-									</div>
-								</div>
-
-								<div class="col-12">
-									<button type="submit" class="btn btn-success">
-										<i class="fa-solid fa-play me-1"></i> Process Playlist
-									</button>
-									<div class="text-muted small mt-2">
-										<i class="fa-solid fa-info-circle me-1"></i>
-										Processing may take a few moments. You'll see a summary when complete.
-									</div>
-								</div>
-							</form>
-
-						<?php endif; ?>
-
+						<div class="alert alert-warning small mt-3 mb-0" id="import-warning">
+							<i class="fa-solid fa-triangle-exclamation me-1"></i>
+							Processing may take a few moments. You'll see a summary when complete.
+						</div>
 					</div>
 				</div>
+
+				<!-- Import Results -->
+				<div class="card shadow-sm" id="import-results" style="display:none;">
+					<div class="card-header fw-semibold"><i class="fa-solid fa-check-circle me-1"></i> Import Complete</div>
+					<div class="card-body">
+						<div id="results-content"></div>
+						<button type="button" class="btn btn-primary mt-3" id="new-import-btn">
+							<i class="fa-solid fa-cloud-arrow-up me-1"></i> Upload Another Playlist
+						</button>
+					</div>
+				</div>
+
+				<script>
+					(function() {
+						const CHUNK_SIZE = 1024 * 1024;
+						let selectedFile = null;
+
+						if ($('#upload-section').length) {
+							checkForPlaylist();
+						}
+
+						$('#select-file-btn').on('click', function() {
+							$('#playlist-file').click();
+						});
+
+						$('#playlist-file').on('change', function(e) {
+							selectedFile = e.target.files[0];
+							if (selectedFile) {
+								const ext = selectedFile.name.split('.').pop().toLowerCase();
+								if (ext !== 'm3u' && ext !== 'm3u8') {
+									alert('Please select a valid M3U or M3U8 file.');
+									selectedFile = null;
+									return;
+								}
+								$('#selected-file-name').text(selectedFile.name + ' (' + formatBytes(selectedFile.size) + ')');
+								$('#upload-btn').show();
+							}
+						});
+
+						$('#upload-btn').on('click', function() {
+							if (!selectedFile) return;
+							uploadPlaylist(selectedFile);
+						});
+
+						$('#start-import-btn').on('click', function() {
+							startImport();
+						});
+
+						$('#remove-playlist-btn').on('click', function() {
+							if (confirm('Remove uploaded playlist and start over?')) {
+								$.ajax({
+									url: 'delete_playlist.php',
+									type: 'POST',
+									dataType: 'json',
+									success: function() {
+										showUploadSection();
+									},
+									error: function() {
+										alert('Failed to remove playlist. Please try again.');
+									}
+								});
+							}
+						});
+
+						$('#new-import-btn').on('click', function() {
+							window.location.reload();
+						});
+
+						function checkForPlaylist() {
+							$.ajax({
+								url: 'check_playlist.php',
+								type: 'GET',
+								dataType: 'json',
+								success: function(response) {
+									if (response.success && response.hasPlaylist) {
+										showImportSection(response);
+									} else {
+										showUploadSection();
+									}
+								},
+								error: function() {
+									showUploadSection();
+								}
+							});
+						}
+
+						function uploadPlaylist(file) {
+							const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+							let currentChunk = 0;
+
+							$('#upload-btn').hide();
+							$('#select-file-btn').prop('disabled', true);
+							$('#upload-progress-container').show();
+							updateUploadProgress(0, 'Starting upload...');
+
+							function uploadNextChunk() {
+								const start = currentChunk * CHUNK_SIZE;
+								const end = Math.min(start + CHUNK_SIZE, file.size);
+								const chunk = file.slice(start, end);
+
+								const formData = new FormData();
+								formData.append('file', chunk);
+								formData.append('fileName', file.name);
+								formData.append('chunkIndex', currentChunk);
+								formData.append('totalChunks', totalChunks);
+
+								$.ajax({
+									url: 'upload_playlist.php',
+									type: 'POST',
+									data: formData,
+									processData: false,
+									contentType: false,
+									success: function(response) {
+										if (response.success) {
+											currentChunk++;
+											const progress = Math.round((currentChunk / totalChunks) * 100);
+											updateUploadProgress(progress, 'Uploading... ' + progress + '%');
+
+											if (currentChunk < totalChunks) {
+												uploadNextChunk();
+											} else {
+												updateUploadProgress(100, 'Upload complete!');
+												setTimeout(function() {
+													checkForPlaylist();
+												}, 500);
+											}
+										} else {
+											alert('Upload failed: ' + response.error);
+											resetUploadUI();
+										}
+									},
+									error: function() {
+										alert('Upload failed. Please try again.');
+										resetUploadUI();
+									}
+								});
+							}
+							uploadNextChunk();
+						}
+
+						function startImport() {
+							// Hide buttons and warning
+							$('#start-import-btn').prop('disabled', true);
+							$('#remove-playlist-btn').prop('disabled', true);
+							$('#import-warning').hide();
+
+							// Show spinner
+							$('#import-processing-container').show();
+
+							$.ajax({
+								url: 'import_handler.php',
+								type: 'POST',
+								data: {
+									mode: 'sync',
+									_ajax: '1'
+								},
+								dataType: 'json',
+								timeout: 300000, // 5 minute timeout
+								success: function(response) {
+									// Hide spinner
+									$('#import-processing-container').hide();
+
+									// Check if completed
+									if (response.status === 'completed') {
+										showImportResults(response);
+									} else {
+										// Unexpected response
+										alert('Import returned unexpected status: ' + (response.status || 'unknown'));
+										$('#start-import-btn').prop('disabled', false);
+										$('#remove-playlist-btn').prop('disabled', false);
+										$('#import-warning').show();
+									}
+								},
+								error: function(xhr, status, error) {
+									// Hide spinner
+									$('#import-processing-container').hide();
+									$('#start-import-btn').prop('disabled', false);
+									$('#remove-playlist-btn').prop('disabled', false);
+									$('#import-warning').show();
+
+									if (status === 'timeout') {
+										alert('Import timed out. Check your database - the import may have completed.');
+									} else {
+										alert('Import failed: ' + error);
+									}
+								}
+							});
+						}
+
+						function showImportResults(response) {
+							$('#import-section').hide();
+							$('#import-results').show();
+
+							let html = '<div class="alert alert-' + (response.ok ? 'success' : 'danger') + '">';
+							html += '<div class="fw-semibold mb-1">';
+							html += response.ok ? '<i class="fa-solid fa-check-circle me-1"></i> Import Completed' : '<i class="fa-solid fa-times-circle me-1"></i> Import Failed';
+							html += '</div>';
+
+							if (response.message) {
+								html += '<div class="small">' + response.message + '</div>';
+							}
+
+							if (response.stats) {
+								html += '<hr><div class="row small">';
+								for (let key in response.stats) {
+									html += '<div class="col-md-4 mb-2">';
+									html += '<div class="text-muted">' + key + '</div>';
+									html += '<div class="fw-semibold">' + response.stats[key] + '</div>';
+									html += '</div>';
+								}
+								html += '</div>';
+							}
+							html += '</div>';
+							$('#results-content').html(html);
+
+							// Delete playlist after showing results
+							if (response.ok) {
+								deletePlaylist();
+							}
+						}
+
+						function deletePlaylist() {
+							$.ajax({
+								url: 'delete_playlist.php',
+								type: 'POST',
+								dataType: 'json'
+							});
+						}
+
+						function showUploadSection() {
+							$('#upload-section').show();
+							$('#import-section').hide();
+							$('#import-results').hide();
+							resetUploadUI();
+						}
+
+						function showImportSection(playlistData) {
+							$('#upload-section').hide();
+							$('#import-section').show();
+							$('#import-results').hide();
+							$('#import-processing-container').hide();
+							$('#import-warning').show();
+							$('#start-import-btn').prop('disabled', false);
+							$('#remove-playlist-btn').prop('disabled', false);
+
+							const html = '<p class="mb-1"><i class="fa-solid fa-file me-1"></i> <strong>Filename:</strong> ' + playlistData.filename + '</p>' +
+								'<p class="mb-1"><i class="fa-solid fa-database me-1"></i> <strong>Size:</strong> ' + playlistData.sizeFormatted + '</p>' +
+								'<p class="mb-0"><i class="fa-solid fa-clock me-1"></i> <strong>Uploaded:</strong> ' + playlistData.uploaded + '</p>';
+							$('#playlist-info').html(html);
+						}
+
+						function updateUploadProgress(percent, status) {
+							$('#upload-progress-bar').css('width', percent + '%').text(percent + '%');
+							$('#upload-status').text(status);
+						}
+
+						function resetUploadUI() {
+							selectedFile = null;
+							$('#playlist-file').val('');
+							$('#selected-file-name').text('');
+							$('#upload-btn').hide();
+							$('#select-file-btn').prop('disabled', false);
+							$('#upload-progress-container').hide();
+							updateUploadProgress(0, '');
+						}
+
+						function formatBytes(bytes) {
+							if (bytes === 0) return '0 Bytes';
+							const k = 1024;
+							const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+							const i = Math.floor(Math.log(bytes) / Math.log(k));
+							return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+						}
+					})();
+				</script>
 
 			<?php elseif ($tab === 'creds'): ?>
 
@@ -1094,7 +1367,7 @@ if (file_exists($bootstrap_file)) {
 								</table>
 							</div>
 
-							<!-- Modals (outside table structure) -->
+							<!-- Modals-->
 							<?php foreach ($users as $user): ?>
 								<!-- View Attempts Modal -->
 								<?php if ($user['failed_attempts'] > 0): ?>
