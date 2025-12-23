@@ -1,8 +1,8 @@
-# OTT Stream Score v1.5 - Installation & Upgrade Guide
+# OTT Stream Score v2.0 - Installation & Upgrade Guide
 
 ## Overview
 
-Version 1.5 adds native stream preview functionality, browser-based playlist upload, and improved playlist import handling. Database changes include the `stream_preview_lock` table (for preview coordination) and `feed_id_mapping` table (for playlist import deduplication). Choose your installation path below based on your situation.
+Version 2.0 adds EPG integration, task management, group associations for cross-regional discovery, feed comparison tools, and comprehensive playlist optimization workflows. Database changes include EPG tables, task tables, and group association tables. Choose your installation path below based on your situation.
 
 ---
 
@@ -12,7 +12,8 @@ Version 1.5 adds native stream preview functionality, browser-based playlist upl
 2. [Upgrading from v1.3+](#upgrading-from-v13) - Use migrate.php
 3. [Upgrading from before v1.3](#upgrading-from-before-v13) - Use setup.php first
 4. [Post-Installation](#post-installation) - All users
-5. [Troubleshooting](#troubleshooting) - Common issues
+5. [Technical Details](#technical-details) - Database schema and logic
+6. [Troubleshooting](#troubleshooting) - Common issues
 
 ---
 
@@ -21,37 +22,38 @@ Version 1.5 adds native stream preview functionality, browser-based playlist upl
 For brand new installations of OTT Stream Score.
 
 ### Requirements
-- PHP 8.0 or higher
+- PHP 8.1+ (PDO, cURL, mbstring, zip extensions)
 - MySQL 5.7+ or MariaDB 10.2+
-- FFmpeg and FFprobe installed on server
+- FFmpeg/FFprobe
 - Web server (Apache/Nginx)
-- Session support enabled in PHP
+- Cron access
+- Write permissions for `/playlists/` directory and log files
 
 ### Installation Steps
 
 1. **Upload files to your web server**
-   ```bash
+```bash
    # Clone to your web directory
    git clone https://github.com/ottstreamscore/ottstreamscore /path/to/your/webroot
    cd /path/to/your/webroot
-   ```
+```
    
    Or download and extract the ZIP file to your web directory.
 
 2. **Set file permissions**
-   ```bash
+```bash
    # Make the application directory writable
    chmod 755 .
-   ```
+```
 
 3. **Run setup**
    
    **Via browser:** Navigate to `https://yourdomain.com/path/to/setup.php`
    
    **Via CLI:**
-   ```bash
+```bash
    php setup.php
-   ```
+```
 
 4. **Follow the setup wizard**
    - Enter database credentials (host, port, name, user, password)
@@ -65,23 +67,35 @@ For brand new installations of OTT Stream Score.
    
    Navigate to `https://yourdomain.com/path/to/login.php` and login with your admin credentials.
 
-6. **Import your playlist**
+6. **Import your data**
    
-   Go to Admin → Sync Playlist tab to import your M3U playlist file.
+   Go to Admin → Setup Playlist & EPG tab:
+   - Enter your M3U playlist URL
+   - Enter your EPG URL
+   - Click Fetch to import
+   - Review results, click Sync to import
 
-7. **Setup cron job** (required for feed monitoring)
-   ```bash
+7. **Setup cron job 1** (required for feed monitoring)
+```bash
    */5 * * * * cd /path/to/installation && php cron_check_feeds.php >> /dev/null 2>&1
-   ```
+```
 
-8. **Secure your installation**
-   ```bash
+8. **Setup cron job 2** (optional, but required for inclusion of EPG data)
+```bash
+   0 0,12 * * * cd /path/to/installation && php cron_epg.php >> /dev/null 2>&1
+```
+
+9. **Secure your installation**
+```bash
    # Delete or move setup.php outside webroot
+   # Delete or move migrate.php outside webroot
    rm setup.php
+   rm migrate.php
    
    # Or move it
    mv setup.php ../setup.php.bak
-   ```
+   mv migrate.php ../migrate.php.bak
+```
 
 **✅ Installation complete!** Access your dashboard at `https://yourdomain.com/path/to/`
 
@@ -89,9 +103,9 @@ For brand new installations of OTT Stream Score.
 
 ## Upgrading from v1.3+
 
-**For users currently running v1.3 or later.**
+**For users currently running v1.3, v1.4, or v1.5.**
 
-This is the simplest upgrade path using the new `migrate.php` script.
+This is the simplest upgrade path using the `migrate.php` script.
 
 ### Before You Begin
 
@@ -108,10 +122,10 @@ tar -czf ottstreamscore_backup_$(date +%F).tar.gz /path/to/your/installation
 ### Upgrade Steps
 
 1. **Pull latest code**
-   ```bash
+```bash
    cd /path/to/your/installation
    git pull origin main
-   ```
+```
    
    Or download the latest release and extract files over your existing installation.
 
@@ -120,30 +134,46 @@ tar -czf ottstreamscore_backup_$(date +%F).tar.gz /path/to/your/installation
    **Via browser:** Navigate to `https://yourdomain.com/path/to/migrate.php`
    
    **Via CLI:**
-   ```bash
+```bash
    php migrate.php
-   ```
+```
 
 3. **Verify migration**
    
    The migration script will:
    - Verify your installation is v1.3 or later
-   - Create tables added post v1.3
+   - Create new v2.0 tables (epg_data, group_associations, group_association_prefixes, editor_todo_list, editor_todo_list_log)
    - Create `/playlists` directory if missing (0700 permissions with protection)
    - Report success or skip if table/directory already exists
 
-4. **Clean up** (optional)
-   ```bash
+4. **Configure EPG** (new feature)
+   
+   Navigate to Admin → Playlist tab:
+   - Enter your EPG (XMLTV) URL
+   - Click "Save EPG URL"
+   - EPG will sync automatically via cron
+
+5. **Setup EPG cron** (if not already running)
+```bash
+   0 0,12 * * * cd /path/to/installation && php cron_epg.php >> /dev/null 2>&1
+```
+
+6. **Clean up** (optional)
+```bash
    # Remove migration script
    rm migrate.php
-   ```
+```
 
-**✅ Upgrade complete!** Your installation now supports User Management.
+**✅ Upgrade complete!** Your installation now supports EPG integration, task management, and group associations.
 
 ### What Gets Migrated
 
-The migration script:
-- ✅ Adds new tables created post v1.3
+The migration script adds:
+- ✅ `epg_data` - Electronic Program Guide storage
+- ✅ `group_associations` - Named association groups
+- ✅ `group_association_prefixes` - Prefix-to-association mappings
+- ✅ `editor_todo_list` - Active tasks
+- ✅ `editor_todo_list_log` - Task history
 - ✅ Safe to run multiple times (idempotent)
 
 ### Expected Output
@@ -151,10 +181,14 @@ The migration script:
 **CLI mode:**
 ```
 ======================================================================
-OTT Stream Score - Database Migration (v1.3+)
+OTT Stream Score - Database Migration (v1.3+ to v2.0)
 ======================================================================
 
-✅ Created <<Table Name>>
+✅ Created epg_data table
+✅ Created group_associations table
+✅ Created group_association_prefixes table
+✅ Created editor_todo_list table
+✅ Created editor_todo_list_log table
 
 ======================================================================
 ✅ Migration completed successfully!
@@ -163,7 +197,7 @@ OTT Stream Score - Database Migration (v1.3+)
 
 **Web mode:**
 - Visual interface with migration status
-- Link to User Management when complete
+- Links to new features when complete
 - Error handling with clear messaging
 
 ---
@@ -172,7 +206,7 @@ OTT Stream Score - Database Migration (v1.3+)
 
 **For users running versions 1.2 or earlier.**
 
-If you're upgrading from before v1.3, you must first read and follow the upgrade instructions from the v1.3 release, then upgrade to v1.5.
+If you're upgrading from before v1.3, you must first upgrade to v1.3, then upgrade to v2.0.
 
 ### Why This Matters
 
@@ -189,16 +223,16 @@ Version 1.3 introduced major architectural changes:
 **Step 1: Upgrade to v1.3 first**
 
 1. **Backup everything:**
-   ```bash
+```bash
    tar -czf ott-backup-$(date +%Y%m%d).tar.gz /path/to/installation
    mysqldump -u user -p database > backup.sql
-   ```
+```
 
 2. **Get v1.3 files:**
-   ```bash
+```bash
    cd /path/to/installation
    git checkout v1.3
-   ```
+```
    Or download the v1.3 release from GitHub.
 
 3. **Run setup.php:**
@@ -214,23 +248,26 @@ Version 1.3 introduced major architectural changes:
 
 5. **Login and verify** settings in Admin Dashboard
 
-**Step 2: Upgrade to v1.5**
+**Step 2: Upgrade to v2.0**
 
-Once you're successfully running v1.3:
+Once you're successfully running v1.3+:
 
-1. **Get v1.5 files:**
-   ```bash
+1. **Get v2.0 files:**
+```bash
    cd /path/to/installation
    git checkout main
-   # or: git checkout v1.5
-   ```
+   # or: git checkout v2.0
+```
 
 2. **Run migration:**
-   ```bash
+```bash
    php migrate.php
-   ```
+```
 
-3. **Access User Management** in Admin panel
+3. **Configure new features:**
+   - Add EPG URL in Admin → Playlist tab
+   - Setup EPG cron job
+   - Create group associations (optional)
 
 **✅ Upgrade complete!**
 
@@ -241,19 +278,13 @@ Once you're successfully running v1.3:
 - Authentication is now required (create admin account)
 - Database credentials move to `.db_bootstrap` file
 
-**From v1.3 to v1.4:**
-- Adds login_attempts table for User Management
+**From v1.3-v1.5 to v2.0:**
+- Adds EPG integration with automated syncing
+- Adds task management system for collaborative workflows
+- Adds group associations for cross-regional discovery
+- Adds feed comparison and EPG schedule comparison
+- All previous features remain unchanged
 - No breaking changes
-- All v1.3 features remain unchanged
-
-**From v1.4 to v1.5:**
-- Adds native video player for stream previews
-- Adds browser-based playlist upload with automatic cleanup
-- Adds stream_preview_lock table for preview system
-- Adds feed_id_mapping table to improve playlist import deduplication
-- Creates protected /playlists directory for temporary upload storage
-- No breaking changes
-- All v1.4 features remain unchanged
 
 ---
 
@@ -276,10 +307,19 @@ Once installed, access your application at:
 - Monitoring intervals (batch size, lock duration)
 - Retry logic configuration
 
-**Sync Playlist:**
-- Browser-based playlist upload (supports 80MB+ files with progress tracking)
-- Import M3U playlist files with automatic cleanup
-- Sync mode (update existing) or Insert-only mode
+**Playlist & EPG:**
+- URL-based playlist fetching with real-time download progress
+- Sync mode updates existing data while preserving quality scores and history
+- EPG URL configuration for automated program guide syncing
+- One-click credential rotation without re-downloading
+- Last sync timestamps and status monitoring
+
+**Group Associations:**
+- Create named associations (e.g., "English Speaking", "North America")
+- Link group prefixes together (US|, UK|, CA|)
+- Discover similar channels across regions automatically
+- Find backup streams when primary feeds fail
+- Alternative to exact tvg-id matching for discovering regional variants
 
 **Update Stream Credentials:**
 - Bulk update /live/ URLs with new credentials
@@ -287,7 +327,7 @@ Once installed, access your application at:
 
 **User Management:** 
 - View all user accounts
-- Create new users
+- Create new users for team collaboration
 - Monitor failed login attempts
 - Reset account lockouts
 - Delete users (with safeguards)
@@ -299,19 +339,62 @@ Once installed, access your application at:
 **Change Password:**
 - Update your user account password
 
-### Setting Up Cron Job
+### Setting Up Cron Jobs
 
-**Required** for feed monitoring:
+**Feed Monitoring** (required):
 ```bash
 */5 * * * * cd /path/to/installation && php cron_check_feeds.php >> /dev/null 2>&1
 ```
 
 **Frequency recommendations:**
-- `*/5 * * * *` - Every 5 minutes (standard)
+- `*/5 * * * *` - Every 5 minutes (standard, recommended)
 - `*/10 * * * *` - Every 10 minutes (lighter load)
 - `*/15 * * * *` - Every 15 minutes (minimal load)
 
 Adjust based on your feed count and server capacity.
+
+**EPG Sync** (optional, but required for EPG data inclusion):
+```bash
+0 0,12 * * * cd /path/to/installation && php cron_epg.php >> /dev/null 2>&1
+```
+
+**Frequency recommendations:**
+- `0 0,12 * * *` - Twice daily at midnight and noon (standard, recommended)
+- `0 0 * * *` - Once daily at midnight (lighter load)
+
+### New v2.0 Features to Explore
+
+**EPG Integration:**
+- View program schedules on channel pages (toggle EPG display)
+- Compare schedules between similar channels
+- Verify content matches before feed replacement
+- EPG data automatically syncs via cron
+
+**Task Management:**
+- Create tasks for feed replacements, reviews, or EPG adjustments
+- Assign alternative feeds with full context
+- Add notes explaining changes
+- Track task completion history
+- Collaborate with team members on playlist optimization
+
+**Group Associations:**
+- Define associations by language, region, or content type
+- Link prefixes (e.g., US| + UK| + CA| = "English Speaking")
+- Discover backup streams across regions automatically
+- Find alternatives when primary feeds fail
+
+**Feed Comparison:**
+- Side-by-side metrics comparison
+- EPG schedule comparison
+- Historical reliability charts
+- Quality score breakdowns
+
+**Group Audit:**
+- Analyze entire categories for optimization opportunities
+- Get recommendations for better alternatives
+- Filter by date range (7/30/90 days, all time, custom)
+- Dismiss irrelevant suggestions
+- Bulk workflow for systematic improvement
 
 ---
 
@@ -348,9 +431,54 @@ See `SECURITY.md` for additional security measures:
 
 ### Playlist Security
 
-**Browser-based upload:** v1.5+ includes a browser upload system that stores playlists temporarily in `/playlists` directory (0700 permissions, protected by `index.php`). Files are automatically deleted after successful import.
+Browser upload system stores playlists temporarily in `/playlists` directory (0700 permissions, protected by `index.php`). Files are automatically deleted after successful import.
 
 ⚠️ **Important:** If manually uploading playlists via SFTP/SSH, never store them in web-accessible directories. Playlist files contain sensitive stream URLs and credentials.
+
+---
+
+## Technical Details
+
+### Database Schema
+- **channels** - Channel metadata (tvg-id, name, logo, group)
+- **feeds** - Feed URLs, current status, and quality metrics
+- **channel_feeds** - Many-to-many relationship (supports duplicate feeds per channel)
+- **feed_checks** - Historical check data with timestamps and results
+- **feed_check_queue** - Smart scheduling queue for automated monitoring
+- **feed_id_mapping** - URL hash mapping for feed ID persistence across imports
+- **stream_preview_lock** - Mutex coordination for single-connection stream preview
+- **epg_data** - Electronic Program Guide data with schedule information
+- **group_associations** - Named association groups for cross-regional discovery
+- **group_association_prefixes** - Links prefixes to associations (many-to-many)
+- **editor_todo_list** - Active tasks awaiting completion
+- **editor_todo_list_log** - Historical record of completed/deleted tasks
+- **group_audit_ignores** - User-dismissed feed recommendations
+- **settings** - Application configuration (playlist URL, EPG URL, timezone, etc.)
+- **users** - Authentication and user management
+- **login_attempts** - Security logging and rate limiting
+
+### Feed Checking Logic
+1. Queue selects next batch of due feeds based on smart scheduling
+2. FFprobe analyzes stream metadata (resolution, FPS, codec)
+3. HTTP response codes and reachability recorded
+4. Results stored in feed_checks table
+5. Reliability score recalculated over 7-day rolling window
+6. Next check scheduled: 72 hours (healthy) or progressive backoff (failed)
+
+### Reliability Calculation
+- Rolling 7-day (168-hour) window
+- Percentage of successful checks vs total checks in window
+- Recent checks weighted slightly higher
+- Displayed as percentage (0-100%)
+- Updates automatically with each new check
+
+### EPG Processing
+- Downloads from remote URL (supports gzip/zip compression)
+- Auto-detects format via magic bytes inspection
+- Filters to current + 3 days prior (rolling window)
+- Converts timestamps to configured timezone
+- Batch inserts with connection keep-alive for large files
+- Cleans stale data older than 4 days
 
 ---
 
@@ -414,19 +542,7 @@ tail -f php_errors.log
 
 **Verify PHP extensions:**
 ```bash
-php -m | grep -E "pdo|mysql|session"
-```
-
-### User Management tab not showing
-
-**Verify login_attempts table exists:**
-```sql
-SHOW TABLES LIKE 'login_attempts';
-```
-
-**If missing, run migration:**
-```bash
-php migrate.php
+php -m | grep -E "pdo|mysql|session|curl|mbstring|zip"
 ```
 
 ### Account locked out
@@ -526,16 +642,27 @@ Prevents setup from running multiple times.
 
 ## Database Schema
 
-### Version 1.5 Tables
+### Version 2.0 Tables
 
 **Core tables:**
 - `channels` - Channel metadata
 - `feeds` - Feed URLs and current status
-- `feed_id_mapping` - URL hash mapping table for feed ID persistence across playlist imports *(added in v1.5)*
+- `feed_id_mapping` - URL hash mapping for feed ID persistence
 - `channel_feeds` - Many-to-many relationship (supports duplicates)
 - `feed_checks` - Historical check data
 - `feed_check_queue` - Monitoring schedule
-- `stream_preview_lock` - Mutex coordination table for stream preview system *(added in v1.5)*
+- `stream_preview_lock` - Mutex coordination for stream preview
+
+**EPG tables:**
+- `epg_data` - Electronic Program Guide storage
+
+**Association tables:**
+- `group_associations` - Named association groups
+- `group_association_prefixes` - Prefix-to-association mappings
+
+**Task tables:**
+- `editor_todo_list` - Active tasks
+- `editor_todo_list_log` - Task history
 
 **Management tables:**
 - `settings` - Application configuration
@@ -543,22 +670,16 @@ Prevents setup from running multiple times.
 - `login_attempts` - Security logging and rate limiting 
 - `group_audit_ignores` - User-dismissed feed recommendations
 
-### Schema Verification
-
-**Check all tables exist:**
-```sql
-SHOW TABLES;
-```
-
 ## Getting Help
 
 ### Before Asking for Help
 
-1. Check `php_errors.log` in application directory
+1. Check your PHP error log
 2. Verify database connection works
 3. Ensure all PHP extensions are installed
 4. Check web server error logs
-5. Try the troubleshooting steps above
+5. Verify cron jobs are running
+6. Try the troubleshooting steps above
 
 ### Reporting Issues
 
@@ -567,50 +688,18 @@ SHOW TABLES;
 **Include in your report:**
 - PHP version: `php -v`
 - Database version: `mysql --version`
-- Error messages from `php_errors.log`
+- Error messages from `php_errors.log` and `cron_epg_errors.log`
 - Steps to reproduce the issue
 - Installation type (fresh vs upgrade)
 - Previous version (if upgrading)
-
-### Useful Commands
-
-**Check PHP version:**
-```bash
-php -v
-```
-
-**Check database version:**
-```bash
-mysql --version
-```
-
-**Test database connection:**
-```bash
-mysql -h host -u user -p database
-```
-
-**View PHP extensions:**
-```bash
-php -m
-```
-
-**Check cron execution:**
-```bash
-grep cron_check_feeds /var/log/syslog | tail -20
-```
-
-**View recent feed checks:**
-```sql
-SELECT * FROM feed_checks ORDER BY checked_at DESC LIMIT 10;
-```
-
 ---
 
 ## Version History
 
-**v1.5** (December 2025) - Native video player for stream previews
-**v1.4** (December 2025) - User Management, migration interface
-**v1.3** (December 2025) - Authentication system, database-driven configuration, admin panel, setup interface
+**v2.0** (December 2025) - EPG integration, task management, group associations, feed comparison  
+**v1.5** (December 2025) - Native video player for stream previews  
+**v1.4** (December 2025) - User Management, migration interface  
+**v1.3** (December 2025) - Authentication system, database-driven configuration, admin panel, setup interface  
 **v1.2 and earlier** - File-based configuration (config.php)
 
 ---
@@ -619,10 +708,10 @@ SELECT * FROM feed_checks ORDER BY checked_at DESC LIMIT 10;
 
 - **[README.md](README.md)** - Feature overview and quick start
 - **[SECURITY.md](SECURITY.md)** - Security best practices
-- **[RELEASE_NOTES_1.5.md](RELEASE_NOTES_1.5.md)** - Version 1.5 changelog
+- **[RELEASE_NOTES_2.0.md](RELEASE_NOTES_2.0.md)** - Version 2.0 changelog
 
 ---
 
-**Current Version:** 1.5  
+**Current Version:** 2.0  
 **Release Date:** December 2025  
 **Support:** GitHub Issues and Documentation

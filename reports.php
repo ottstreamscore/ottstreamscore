@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-$title = 'Reports';
+$title = 'Group Audit';
 $currentPage = 'reports';
 require_once __DIR__ . '/_boot.php';
 
@@ -34,289 +34,82 @@ $groups = $pdo->query("
 ")->fetchAll();
 ?>
 
-<style>
-	div.dataTables_filter {
-		display: none;
-	}
+<div class="row g-3">
+	<div class="col-lg-3">
+		<div class="card shadow-sm mb-3">
+			<div class="card-header fw-semibold"><i class="fa-solid fa-sliders me-1"></i> Report Settings</div>
+			<div class="card-body">
+				<label class="form-label small text-muted mb-1">Select Group to Audit</label>
+				<select id="audit_group" class="form-select mb-3">
+					<option value="">-- Select a group --</option>
+					<?php foreach ($groups as $gRow): $gName = (string)$gRow['group_title']; ?>
+						<option value="<?= h($gName) ?>"><?= h($gName) ?></option>
+					<?php endforeach; ?>
+				</select>
 
-	div.dataTables_wrapper div.dataTables_filter {
-		display: none !important;
-	}
+				<label class="form-label small text-muted mb-1">Date Range Filter</label>
+				<select id="audit_date_range" class="form-select mb-2">
+					<option value="all">All Time</option>
+					<option value="7">Last 7 Days</option>
+					<option value="30" selected>Last 30 Days</option>
+					<option value="90">Last 90 Days</option>
+					<option value="custom">Custom Range</option>
+				</select>
 
-	.quick-filter.active {
-		pointer-events: none;
-	}
+				<div id="custom_date_range" style="display:none;">
+					<label class="form-label small text-muted mb-1">From</label>
+					<input type="date" id="audit_date_from" class="form-control form-control-sm mb-2">
+					<label class="form-label small text-muted mb-1">To</label>
+					<input type="date" id="audit_date_to" class="form-control form-control-sm mb-3">
+				</div>
 
-	div#reportsTable_wrapper {
-		padding: 10pt;
-	}
+				<div class="d-grid gap-2 mb-3">
+					<button id="btn_run_audit" class="btn btn-dark" type="button">
+						<i class="fa-solid fa-play me-1"></i> Run Audit
+					</button>
+				</div>
 
-	/* Tab styling */
-	.nav-tabs .nav-link {
-		color: #6c757d;
-	}
-
-	.nav-tabs .nav-link.active {
-		color: #0d6efd;
-		font-weight: 600;
-	}
-
-	/* Group Audit specific styles */
-	.audit-card {
-		margin-bottom: 1rem;
-		border-left: 4px solid #dee2e6;
-		transition: all 0.2s;
-	}
-
-	.audit-card:hover {
-		box-shadow: 0 0.125rem 0.5rem rgba(0, 0, 0, 0.1);
-	}
-
-	.audit-card.status-optimal {
-		border-left-color: #28a745;
-	}
-
-	.audit-card.status-suboptimal {
-		border-left-color: #ffc107;
-	}
-
-	.audit-card.status-no-data {
-		border-left-color: #6c757d;
-	}
-
-	.audit-card.status-failed {
-		border-left-color: #dc3545;
-	}
-
-	.status-indicator {
-		width: 12px;
-		height: 12px;
-		border-radius: 50%;
-		display: inline-block;
-		margin-right: 0.5rem;
-	}
-
-	.status-optimal .status-indicator {
-		background-color: #28a745;
-	}
-
-	.status-suboptimal .status-indicator {
-		background-color: #ffc107;
-	}
-
-	.status-no-data .status-indicator {
-		background-color: #6c757d;
-	}
-
-	.status-failed .status-indicator {
-		background-color: #dc3545;
-	}
-
-	.alternative-feed {
-		background: var(--bs-secondary-bg);
-		border-radius: 4px;
-		padding: 0.5rem;
-		margin-bottom: 0.5rem;
-		border: 1px solid var(--bs-border-color);
-	}
-
-	.score-badge {
-		font-size: 0.875rem;
-		font-weight: 600;
-		padding: 0.25rem 0.5rem;
-	}
-
-	#audit-loading {
-		text-align: center;
-		padding: 3rem;
-		display: none;
-	}
-
-	#audit_summary {
-		font-size: 13pt;
-	}
-
-	#reportsTabs li button {
-		font-size: 14pt;
-		color: var(--bs-card-cap-color);
-	}
-</style>
-
-<!-- Tab Navigation -->
-<ul class="nav nav-tabs mb-3" id="reportsTabs" role="tablist">
-	<li class="nav-item" role="presentation">
-		<button class="nav-link active" id="feed-report-tab" data-bs-toggle="tab" data-bs-target="#feed-report" type="button" role="tab">
-			<i class="fa-solid fa-ranking-star me-1"></i> Feed Report
-		</button>
-	</li>
-	<li class="nav-item" role="presentation">
-		<button class="nav-link" id="group-audit-tab" data-bs-toggle="tab" data-bs-target="#group-audit" type="button" role="tab">
-			<i class="fa-solid fa-list-check me-1"></i> Group Audit
-		</button>
-	</li>
-</ul>
-
-<!-- Tab Content -->
-<div class="tab-content" id="reportsTabContent">
-	<!-- FEED REPORT TAB (Original) -->
-	<div class="tab-pane fade show active" id="feed-report" role="tabpanel">
-		<div class="row g-3">
-			<div class="col-lg-3">
-				<div class="card shadow-sm">
-					<div class="card-header fw-semibold"><i class="fa-solid fa-filter me-1"></i> Filters</div>
-					<div class="card-body">
-
-						<label class="form-label small text-muted mb-1">Search (Channel name or EPG ID)</label>
-						<input id="flt_q" class="form-control mb-3" placeholder="OWN, ESPN, epg id...">
-
-						<label class="form-label small text-muted mb-1">Group</label>
-						<select id="flt_group" class="form-select mb-3">
-							<option value="">All groups</option>
-							<?php foreach ($groups as $gRow): $gName = (string)$gRow['group_title']; ?>
-								<option value="<?= h($gName) ?>"><?= h($gName) ?></option>
-							<?php endforeach; ?>
-						</select>
-
-						<div class="d-grid gap-2">
-							<button id="btn_apply" class="btn btn-dark" type="button">Apply</button>
-							<button id="btn_reset" class="btn btn-outline-secondary" type="button">Reset</button>
-						</div>
-
-						<div class="text-muted small mt-3">
-							Searches/sorts across <strong>all records</strong>.
-						</div>
-					</div>
+				<div class="alert alert-info small mb-0">
+					<i class="fa-solid fa-circle-info me-1"></i>
+					This will analyze all channels in the selected group and identify better feed alternatives based on historical data.
 				</div>
 			</div>
+		</div>
 
-			<div class="col-lg-9">
-				<div class="card shadow-sm">
-					<div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
-						<div class="fw-semibold"><i class="fa-solid fa-ranking-star me-1"></i> Feed Report</div>
-
-						<div class="d-flex flex-wrap gap-2">
-							<button class="btn btn-outline-success btn-sm quick-filter" data-quick="top">Top Channels</button>
-							<button class="btn btn-outline-danger btn-sm quick-filter" data-quick="dead">Dead Channels</button>
-							<button class="btn btn-outline-warning btn-sm quick-filter" data-quick="unstable">Unstable</button>
-							<button class="btn btn-outline-secondary btn-sm quick-filter" data-quick="unknown">Never Checked</button>
-							<button class="btn btn-outline-primary btn-sm quick-filter" data-quick="recent">Last 24h</button>
-							<button class="btn btn-outline-secondary btn-sm quick-filter" data-quick="">All</button>
-						</div>
-					</div>
-
-					<div class="table-responsive">
-						<table id="reportsTable" class="table table-striped table-hover mb-0 align-middle">
-							<thead>
-								<tr>
-									<th>Group</th>
-									<th>Channel</th>
-									<th>EPG ID</th>
-									<th>Status</th>
-									<th>Quality</th>
-									<th>Res</th>
-									<th class="text-end">FPS</th>
-									<th>Codec</th>
-									<th>Checked</th>
-									<th>File</th>
-									<th style="display:none;">status_rank</th>
-									<th style="display:none;">class_rank</th>
-									<th style="display:none;">checked_ts</th>
-								</tr>
-							</thead>
-							<tbody></tbody>
-						</table>
-					</div>
-
-					<div class="card-body border-top">
-						<div class="text-muted small">
-							Sort suggestion: Status → Class → FPS → Last Checked.
-						</div>
-					</div>
+		<div class="card shadow-sm">
+			<div class="card-header fw-semibold d-flex justify-content-between align-items-center">
+				<span><i class="fa-solid fa-eye-slash me-1"></i> Ignored Feeds</span>
+				<button id="btn_manage_ignores" class="btn btn-sm btn-outline-secondary" type="button">
+					Manage
+				</button>
+			</div>
+			<div class="card-body">
+				<div id="ignored_count_display" class="text-muted small">
+					No ignored feeds for current group
 				</div>
 			</div>
 		</div>
 	</div>
 
-	<!-- GROUP AUDIT TAB (New) -->
-	<div class="tab-pane fade" id="group-audit" role="tabpanel">
-		<div class="row g-3">
-			<div class="col-lg-3">
-				<div class="card shadow-sm mb-3">
-					<div class="card-header fw-semibold"><i class="fa-solid fa-sliders me-1"></i> Audit Settings</div>
-					<div class="card-body">
-						<label class="form-label small text-muted mb-1">Select Group to Audit</label>
-						<select id="audit_group" class="form-select mb-3">
-							<option value="">-- Select a group --</option>
-							<?php foreach ($groups as $gRow): $gName = (string)$gRow['group_title']; ?>
-								<option value="<?= h($gName) ?>"><?= h($gName) ?></option>
-							<?php endforeach; ?>
-						</select>
-
-						<label class="form-label small text-muted mb-1">Date Range Filter</label>
-						<select id="audit_date_range" class="form-select mb-2">
-							<option value="all">All Time</option>
-							<option value="7">Last 7 Days</option>
-							<option value="30" selected>Last 30 Days</option>
-							<option value="90">Last 90 Days</option>
-							<option value="custom">Custom Range</option>
-						</select>
-
-						<div id="custom_date_range" style="display:none;">
-							<label class="form-label small text-muted mb-1">From</label>
-							<input type="date" id="audit_date_from" class="form-control form-control-sm mb-2">
-							<label class="form-label small text-muted mb-1">To</label>
-							<input type="date" id="audit_date_to" class="form-control form-control-sm mb-3">
-						</div>
-
-						<div class="d-grid gap-2 mb-3">
-							<button id="btn_run_audit" class="btn btn-dark" type="button">
-								<i class="fa-solid fa-play me-1"></i> Run Audit
-							</button>
-						</div>
-
-						<div class="alert alert-info small mb-0">
-							<i class="fa-solid fa-circle-info me-1"></i>
-							This will analyze all channels in the selected group and identify better feed alternatives based on historical data.
-						</div>
-					</div>
-				</div>
-
-				<div class="card shadow-sm">
-					<div class="card-header fw-semibold d-flex justify-content-between align-items-center">
-						<span><i class="fa-solid fa-eye-slash me-1"></i> Ignored Feeds</span>
-						<button id="btn_manage_ignores" class="btn btn-sm btn-outline-secondary" type="button">
-							Manage
-						</button>
-					</div>
-					<div class="card-body">
-						<div id="ignored_count_display" class="text-muted small">
-							No ignored feeds for current group
-						</div>
-					</div>
-				</div>
+	<div class="col-lg-9">
+		<div class="card shadow-sm">
+			<div class="card-header fw-semibold">
+				<i class="fa-solid fa-list-check me-1"></i> Report Results
+				<span id="audit_summary" class="text-muted small ms-2"></span>
 			</div>
-
-			<div class="col-lg-9">
-				<div class="card shadow-sm">
-					<div class="card-header fw-semibold">
-						<i class="fa-solid fa-list-check me-1"></i> Audit Results
-						<span id="audit_summary" class="text-muted small ms-2"></span>
+			<div class="card-body">
+				<div id="audit-loading" style="display:none; text-align:center !important;">
+					<div class="spinner-border text-primary" role="status">
+						<span class="visually-hidden">Loading...</span>
 					</div>
-					<div class="card-body">
-						<div id="audit-loading">
-							<div class="spinner-border text-primary" role="status">
-								<span class="visually-hidden">Loading...</span>
-							</div>
-							<div class="mt-2 text-muted">Running audit...</div>
-						</div>
+					<div style="font-size:13pt;" class="mt-2 text-muted">Running audit...</div>
+				</div>
 
-						<div id="audit-results"></div>
+				<div id="audit-results"></div>
 
-						<div id="audit-empty" style="display:none;" class="text-center text-muted py-5">
-							<i class="fa-solid fa-magnifying-glass fa-3x mb-3 opacity-25"></i>
-							<p>Select a group and click "Run Audit" to begin analysis.</p>
-						</div>
-					</div>
+				<div id="audit-empty" class="text-center text-muted py-5">
+					<i class="fa-solid fa-magnifying-glass fa-3x mb-3 opacity-25"></i>
+					<p>Select a group and click "Run Audit" to begin analysis.</p>
 				</div>
 			</div>
 		</div>
@@ -346,156 +139,12 @@ $groups = $pdo->query("
 
 
 <script>
-	// FEED REPORT 
-	let quickMode = '';
-
-	function getFilters() {
-		return {
-			q: ($('#flt_q').val() || '').trim(),
-			group: $('#flt_group').val() || ''
-		};
-	}
-
-	function setQuickActive(mode) {
-		$('.quick-filter').removeClass('active btn-dark');
-		const $btn = $('.quick-filter[data-quick="' + mode + '"]');
-		if ($btn.length) $btn.addClass('btn-dark active');
-	}
-
-	$(function() {
-		const table = $('#reportsTable').DataTable({
-			serverSide: true,
-			processing: true,
-			pageLength: 50,
-			lengthMenu: [
-				[25, 50, 100, 250],
-				[25, 50, 100, 250]
-			],
-			// ADD THESE:
-			dom: "<'row'<'col-sm-12 col-md-4'l><'col-sm-12 col-md-8'<'d-flex justify-content-end align-items-center gap-2'Bf>>>" +
-				"<'row'<'col-sm-12'tr>>" +
-				"<'row'<'col-sm-12 col-md-5'i><'col-sm-12 col-md-7'p>>",
-			buttons: [{
-					extend: 'copy',
-					text: '<i class="fa-solid fa-copy me-1"></i> Copy',
-					className: 'btn btn-outline-secondary btn-sm',
-					exportOptions: {
-						columns: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-					}
-				},
-				{
-					extend: 'csv',
-					text: '<i class="fa-solid fa-file-csv me-1"></i> Export CSV',
-					className: 'btn btn-outline-secondary btn-sm',
-					exportOptions: {
-						columns: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-					}
-				}
-			],
-			ajax: {
-				url: '<?= h($BASE) ?>/reports_data.php',
-				type: 'GET',
-				data: function(d) {
-					d.filters = getFilters();
-					d.quick = quickMode;
-				}
-			},
-			columns: [{
-					data: 'group_html',
-					orderable: true
-				},
-				{
-					data: 'channel_html',
-					orderable: true
-				},
-				{
-					data: 'tvg_id',
-					orderable: true
-				},
-				{
-					data: 'status_badge',
-					orderable: true
-				},
-				{
-					data: 'class_badge',
-					orderable: true
-				},
-				{
-					data: 'res',
-					orderable: true
-				},
-				{
-					data: 'fps',
-					className: 'text-end',
-					orderable: true
-				},
-				{
-					data: 'codec',
-					orderable: true
-				},
-				{
-					data: 'last_checked',
-					orderable: true
-				},
-				{
-					data: 'file',
-					orderable: false
-				},
-				{
-					data: 'status_rank',
-					visible: false
-				},
-				{
-					data: 'class_rank',
-					visible: false
-				},
-				{
-					data: 'checked_ts',
-					visible: false
-				}
-			],
-			order: [
-				[10, 'desc'],
-				[11, 'desc'],
-				[6, 'desc'],
-				[12, 'desc']
-			],
-			language: {
-				emptyTable: "No rows matched your filters.",
-				zeroRecords: "No rows matched your filters."
-			}
-		});
-
-		$(document).on('click', '.quick-filter', function() {
-			quickMode = $(this).data('quick') || '';
-			setQuickActive(quickMode);
-			table.ajax.reload(null, true);
-		});
-
-		$('#btn_apply').on('click', function() {
-			table.ajax.reload(null, true);
-		});
-
-		$('#btn_reset').on('click', function() {
-			$('#flt_q').val('');
-			$('#flt_group').val('');
-			quickMode = '';
-			setQuickActive('');
-			table.ajax.reload(null, true);
-		});
-
-		$('#flt_q').on('keydown', function(e) {
-			if (e.key === 'Enter') {
-				e.preventDefault();
-				table.ajax.reload(null, true);
-			}
-		});
-
-		setQuickActive('');
-	});
-
-	// GROUP AUDIT 
 	let currentAuditGroup = '';
+
+	// Escape ID for use in HTML IDs and selectors
+	function escapeId(id) {
+		return id.replace(/[^a-zA-Z0-9_-]/g, '_');
+	}
 
 	// Show/hide custom date range
 	$('#audit_date_range').on('change', function() {
@@ -569,9 +218,9 @@ $groups = $pdo->query("
 		const noData = channels.filter(c => c.status === 'no_data').length;
 
 		$('#audit_summary').html(`
-			<span class="badge bg-success">${optimal} Optimal</span>
-			<span class="badge bg-warning text-dark">${suboptimal} Needs Review</span>
-			<span class="badge bg-danger">${failed} Failed</span>
+			<span class="badge bg-success me-1">${optimal} Optimal</span>
+			<span class="badge bg-warning text-dark me-1">${suboptimal} Needs Review</span>
+			<span class="badge bg-danger me-1">${failed} Failed</span>
 			<span class="badge bg-secondary">${noData} No Data</span>
 		`);
 
@@ -594,6 +243,12 @@ $groups = $pdo->query("
 			channel.status === 'suboptimal' ? 'Better Feeds Available' :
 			channel.status === 'failed' ? 'Feed Failed' : 'No Data';
 
+		// Logo image (right side of header)
+		let logoHtml = '';
+		if (channel.tvg_logo && channel.tvg_logo.trim() !== '') {
+			logoHtml = `<img src="${channel.tvg_logo}" alt="${channel.tvg_name}" style="max-height: 30px; max-width: 100%;" onerror="this.style.display='none'">`;
+		}
+
 		let currentFeedHtml = '';
 		if (channel.current_feed_id) {
 			currentFeedHtml = `
@@ -613,7 +268,7 @@ $groups = $pdo->query("
 
 		let alternativesHtml = '';
 		if (channel.alternatives && channel.alternatives.length > 0) {
-			alternativesHtml = '<div class="mt-2"><strong class="small text-muted">RECOMMENDED ALTERNATIVES:</strong>';
+			alternativesHtml = '<div class="mt-4 mb-3"><strong class="small text-muted d-block mb-2">RECOMMENDED ALTERNATIVES:</strong>';
 			channel.alternatives.forEach(alt => {
 				alternativesHtml += `
 					<div class="alternative-feed d-flex justify-content-between align-items-center">
@@ -634,11 +289,22 @@ $groups = $pdo->query("
 								${alt.check_count} checks
 							</div>
 						</div>
+						<button type="button" class="btn btn-sm btn-outline-info btn-create-task me-2" 
+							data-feed-id="${channel.current_feed_id}"
+							data-group="${sourceGroup}"
+							data-suggested-feed-id="${alt.feed_id}"
+							data-suggested-group="${alt.group}"
+							data-from-reports="1"
+							style="padding: 0.25rem 0.5rem; font-size: 0.875rem;"
+							title="Create task">
+							<i class="fa-solid fa-list-check"></i> Add Task
+						</button>
 						<button class="btn btn-sm btn-outline-secondary btn-ignore" 
 							data-tvg-id="${channel.tvg_id}"
 							data-source-group="${sourceGroup}"
 							data-suggested-group="${alt.group}"
-							data-suggested-feed-id="${alt.feed_id}">
+							data-suggested-feed-id="${alt.feed_id}"
+							data-suggested-tvg-name="${alt.tvg_name}">
 							<i class="fa-solid fa-eye-slash"></i> Ignore
 						</button>
 					</div>
@@ -647,25 +313,131 @@ $groups = $pdo->query("
 			alternativesHtml += '</div>';
 		}
 
+		// Build association matches section
+		let associationHtml = '';
+		const associationCount = channel.association_matches ? channel.association_matches.length : 0;
+
+		// Only show association section if there are regular alternatives AND association matches exist
+		if (channel.alternatives && channel.alternatives.length > 0 && associationCount > 0) {
+			const escapedId = escapeId(channel.tvg_id);
+
+			associationHtml = `
+			<div class="association-toggle" onclick="toggleAssociations('${escapedId}')" style="cursor: pointer;">
+				<span class="text-warning">
+					<i class="fa-solid fa-diagram-project me-2"></i>
+					<strong class="small">Association Matches</strong>
+					<span class="badge bg-secondary ms-2">${associationCount}</span>
+				</span>
+				<i class="fa-solid fa-chevron-down ms-2"></i>
+			</div>
+		`;
+
+			associationHtml += `<div class="association-matches-container" id="assoc-${escapedId}">`;
+
+			// Warning message
+			associationHtml += `
+				<div class="alert alert-warning alert-sm mt-3 mb-3" style="font-size: 0.85rem; padding: 0.5rem 0.75rem;">
+					<i class="fa-solid fa-triangle-exclamation me-2"></i>
+					These matches are generated from your group associations based on tvg-id similarity. Verify stream content before use.
+				</div>
+			`;
+
+			// Group by association name
+			const groupedMatches = {};
+			channel.association_matches.forEach(match => {
+				if (!groupedMatches[match.association_name]) {
+					groupedMatches[match.association_name] = [];
+				}
+				groupedMatches[match.association_name].push(match);
+			});
+
+			// Render grouped matches
+			for (const [assocName, matches] of Object.entries(groupedMatches)) {
+				associationHtml += `
+					<div class="mt-3 mb-4">
+						<div class="d-flex align-items-center mb-2">
+							<span class="association-badge me-2">${assocName}</span>
+							<span class="text-muted small">${matches.length} match${matches.length > 1 ? 'es' : ''}</span>
+						</div>
+				`;
+
+				matches.forEach(match => {
+					associationHtml += `
+						<div class="association-feed d-flex justify-content-between align-items-center">
+							<div class="flex-grow-1">
+								<strong>${match.group}</strong>
+								<span class="text-muted small ms-2">(${match.tvg_name})</span>
+								<a href="feed_history.php?feed_id=${match.feed_id}" class="btn btn-sm btn-outline-primary ms-2" target="_blank" title="View feed history" style="font-size: 0.75rem; padding: 0.15rem 0.35rem;">
+									<i class="fa-solid fa-clock-rotate-left"></i>
+								</a>
+								<button class="btn btn-sm btn-outline-success btn-preview ms-1" data-feed-id="${match.feed_id}" title="Preview Stream" style="font-size: 0.75rem; padding: 0.15rem 0.35rem;">
+									<i class="fa-solid fa-play"></i>
+								</button>
+								<div class="text-muted small">
+									Score: <strong>${match.score}/100</strong> •
+									Rel: ${match.reliability}% •
+									${match.class_badge} (${match.res_display}) •
+									FPS: ${match.fps} •
+									${match.check_count} checks
+								</div>
+							</div>
+							<button type="button" class="btn btn-sm btn-outline-info btn-create-task me-2" 
+								data-feed-id="${channel.current_feed_id}"
+								data-group="${sourceGroup}"
+								data-suggested-feed-id="${match.feed_id}"
+								data-suggested-group="${match.group}"
+								data-from-reports="1"
+								style="padding: 0.25rem 0.5rem; font-size: 0.875rem;"
+								title="Create task">
+								<i class="fa-solid fa-list-check"></i> Add Task
+							</button>
+							<button class="btn btn-sm btn-outline-secondary btn-ignore"
+								data-tvg-id="${channel.tvg_id}"
+								data-source-group="${sourceGroup}"
+								data-suggested-group="${match.group}"
+								data-suggested-feed-id="${match.feed_id}"
+								data-suggested-tvg-name="${match.tvg_name}">
+								<i class="fa-solid fa-eye-slash"></i> Ignore
+							</button>
+						</div>
+					`;
+				});
+
+				associationHtml += `</div>`;
+			}
+
+			associationHtml += `</div>`;
+		}
+
 		return `
-			<div class="card audit-card ${statusClass}">
+			<div class="card audit-card ${statusClass} mb-3">
 				<div class="card-body">
-					<div class="d-flex justify-content-between align-items-start">
-						<div class="flex-grow-1">
-							<h6 class="mb-1">
+					<div class="d-flex justify-content-between align-items-start mb-2">
+						<div>
+							<h6 class="card-title mb-1">
 								<span class="status-indicator"></span>
 								${channel.tvg_name}
-								<span class="badge bg-light text-dark ms-2">${channel.tvg_id}</span>
+								<span class="badge bg-secondary ms-2">${channel.tvg_id}</span>
 							</h6>
-							<div class="text-muted small mb-2">${statusText}</div>
-							${currentFeedHtml}
-							${alternativesHtml}
+							<div class="text-muted small">${statusText}</div>
 						</div>
-						${channel.tvg_logo ? `<img src="${channel.tvg_logo}" style="width:40px;height:40px;object-fit:contain;" loading="lazy">` : ''}
+						${logoHtml}
 					</div>
+					${currentFeedHtml}
+					${alternativesHtml}
+					${associationHtml}
 				</div>
 			</div>
 		`;
+	}
+
+	function toggleAssociations(channelId) {
+		const container = $('#assoc-' + channelId);
+		const toggle = container.prev('.association-toggle');
+		const icon = toggle.find('.fa-chevron-down, .fa-chevron-up');
+
+		container.slideToggle(200);
+		icon.toggleClass('fa-chevron-down fa-chevron-up');
 	}
 
 	// Handle ignore button clicks
@@ -675,8 +447,9 @@ $groups = $pdo->query("
 			action: 'add',
 			tvg_id: btn.data('tvg-id'),
 			source_group: btn.data('source-group'),
+			suggested_feed_id: btn.data('suggested-feed-id'),
 			suggested_group: btn.data('suggested-group'),
-			suggested_feed_id: btn.data('suggested-feed-id')
+			suggested_tvg_name: btn.data('suggested-tvg-name')
 		};
 
 		$.ajax({
@@ -685,13 +458,36 @@ $groups = $pdo->query("
 			data: data,
 			success: function(response) {
 				if (response.success) {
-					// Remove the alternative from display
-					btn.closest('.alternative-feed').fadeOut(300, function() {
-						$(this).remove();
-						// If no more alternatives, update status
+					// Determine if this is an association feed or regular alternative
+					const feedDiv = btn.closest('.alternative-feed, .association-feed');
+					const isAssociation = feedDiv.hasClass('association-feed');
+
+					feedDiv.fadeOut(300, function() {
 						const card = btn.closest('.audit-card');
+
+						// Handle association match removal
+						if (isAssociation) {
+							const assocContainer = feedDiv.closest('.association-matches-container');
+							const toggle = assocContainer.prev('.association-toggle');
+
+							$(this).remove();
+							const remainingAssocCount = assocContainer.find('.association-feed').length;
+							toggle.find('.badge').text(remainingAssocCount);
+
+							// If no more association matches, hide entire section
+							if (remainingAssocCount === 0) {
+								toggle.fadeOut(200);
+								assocContainer.fadeOut(200);
+							}
+						} else {
+							$(this).remove();
+						}
+
+						// Check if card should be marked optimal
 						const remainingAlts = card.find('.alternative-feed').length;
-						if (remainingAlts === 0) {
+						const remainingAssoc = card.find('.association-feed').length;
+
+						if (remainingAlts === 0 && remainingAssoc === 0) {
 							card.removeClass('status-suboptimal').addClass('status-optimal');
 							card.find('.text-muted.small:first').text('Using Best Feed');
 						}
@@ -747,7 +543,7 @@ $groups = $pdo->query("
 				<div class="ignored-item">
 					<div class="alternative-feed d-flex justify-content-between align-items-center">
 						<div>
-							<strong>${ignore.tvg_name || ignore.tvg_id}</strong>
+							<strong>${ignore.suggested_tvg_name || ignore.tvg_name || ignore.tvg_id}</strong>
 							<div class="text-muted small">
 								Ignoring: <strong>${ignore.suggested_group}</strong> 
 								<span class="text-muted">• Added ${new Date(ignore.created_at).toLocaleDateString()}</span>
@@ -853,14 +649,95 @@ $groups = $pdo->query("
 		});
 	}
 
+	// Task creation modal functionality for reports page
+	$(document).on('click', '.btn-create-task', function() {
+		const $btn = $(this);
+		const suggestedFeedId = $btn.data('feed-id');
+		const refTvgId = $btn.data('ref-tvg-id');
+		const refGroup = $btn.data('ref-group');
+
+		// Show loading states
+		$('#ref-feed-loading').show();
+		$('#ref-feed-content').hide();
+		$('#sug-feed-loading').show();
+		$('#sug-feed-content').hide();
+
+		// Reset form
+		$('#task-category').val('');
+		$('#task-note').val('');
+
+		// Set reference info in hidden fields
+		$('#task-ref-tvg-id').val(refTvgId);
+		$('#task-ref-group').val(refGroup);
+
+		// Show modal
+		const modal = new bootstrap.Modal(document.getElementById('createTaskModal'));
+		modal.show();
+
+		// Fetch reference feed details (best feed for this tvg-id + group)
+		$.get('get_feed_details.php', {
+			tvg_id: refTvgId,
+			group: refGroup,
+			get_best: 1
+		}, function(response) {
+			if (response.success) {
+				const feed = response.feed;
+
+				$('#ref-group').text(feed.group_title);
+				$('#ref-channel').text(feed.tvg_name);
+				$('#ref-tvg-id').text(feed.tvg_id);
+				$('#ref-file').text(feed.file);
+				$('#ref-reliability').text(feed.reliability + '%');
+				$('#ref-resolution').html(feed.resolution_html);
+				$('#ref-fps').text(feed.fps);
+				$('#ref-codec').text(feed.codec);
+
+				$('#ref-feed-loading').hide();
+				$('#ref-feed-content').show();
+			} else {
+				console.error('Failed to load reference feed:', response.message);
+				$('#ref-feed-loading').hide();
+			}
+		}, 'json').fail(function() {
+			console.error('AJAX failed for reference feed');
+			$('#ref-feed-loading').hide();
+		});
+
+		// Fetch suggested feed details
+		$.get('get_feed_details.php', {
+			feed_id: suggestedFeedId
+		}, function(response) {
+			if (response.success) {
+				const feed = response.feed;
+
+				$('#sug-group').text(feed.group_title);
+				$('#sug-channel').text(feed.tvg_name);
+				$('#sug-tvg-id').text(feed.tvg_id);
+				$('#sug-file').text(feed.file);
+				$('#sug-reliability').text(feed.reliability + '%');
+				$('#sug-resolution').html(feed.resolution_html);
+				$('#sug-fps').text(feed.fps);
+				$('#sug-codec').text(feed.codec);
+
+				// Set hidden form fields
+				$('#task-sug-feed-id').val(feed.feed_id);
+				$('#task-sug-group').val(feed.group_title);
+
+				$('#sug-feed-loading').hide();
+				$('#sug-feed-content').show();
+			} else {
+				alert('Error loading suggested feed details: ' + response.message);
+				modal.hide();
+			}
+		}, 'json').fail(function() {
+			alert('Failed to load suggested feed details.');
+			modal.hide();
+		});
+	});
+
 	// Show empty state initially
 	$(document).ready(function() {
 		$('#audit-empty').show();
-
-		// Update ignored count when switching to Group Audit tab
-		$('#group-audit-tab').on('shown.bs.tab', function() {
-			updateIgnoredCount();
-		});
 	});
 </script>
 

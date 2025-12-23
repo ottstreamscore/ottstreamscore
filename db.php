@@ -8,6 +8,11 @@
 
 declare(strict_types=1);
 
+$timezone = get_setting('app_timezone', 'America/New_York');
+if ($timezone) {
+	date_default_timezone_set($timezone);
+}
+
 /**
  * Get database configuration from .installed file or fallback
  */
@@ -182,9 +187,6 @@ if (!defined('FAIL_RETRY_MINUTES_MIN')) {
 if (!defined('FAIL_RETRY_MINUTES_MAX')) {
 	define('FAIL_RETRY_MINUTES_MAX', (int)get_setting('fail_retry_max', 360));
 }
-
-// Set timezone
-date_default_timezone_set(APP_TZ);
 
 /**
  * Legacy helper - alias for get_db_connection()

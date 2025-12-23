@@ -33,10 +33,9 @@ Setup automatically sets secure permissions:
 
 ## Optional Hardening
 
-### Protect Dotfiles (.htaccess)
+### Protect Dotfiles and Log Files (.htaccess)
 
 Add to your `.htaccess` file:
-
 ```apache
 # Deny access to dotfiles
 <FilesMatch "^\.">
@@ -59,10 +58,19 @@ Add to your `.htaccess` file:
     Order allow,deny
     Deny from all
 </Files>
+
+<Files "epg_cron.log">
+    Order allow,deny
+    Deny from all
+</Files>
+
+<Files "epg_cron_errors.log">
+    Order allow,deny
+    Deny from all
+</Files>
 ```
 
 For Nginx, add to your site configuration:
-
 ```nginx
 location ~ /\. {
     deny all;
@@ -70,7 +78,7 @@ location ~ /\. {
     log_not_found off;
 }
 
-location ~ ^/(\.db_bootstrap|\.installed|php_errors\.log) {
+location ~ ^/(\.db_bootstrap|\.installed|php_errors\.log|epg_cron\.log|epg_cron_errors\.log) {
     deny all;
 }
 ```
@@ -78,7 +86,6 @@ location ~ ^/(\.db_bootstrap|\.installed|php_errors\.log) {
 ### Move Sensitive Files Outside Web Root
 
 **Best practice:** Move `.db_bootstrap` outside your web-accessible directory.
-
 ```bash
 # Move file
 mv .db_bootstrap /home/user/private/.db_bootstrap
@@ -128,12 +135,38 @@ SetEnv DB_PASS "your_password"
     Require all denied
 </Directory>
 ```
-
 ```nginx
 # Nginx: Add to site config
 location /playlists/ {
     deny all;
 }
+```
+
+### EPG URL Security
+⚠️ **Important:** EPG files are downloaded and processed automatically via cron.
+
+**Security considerations:**
+- **Trust your source:** Only use EPG URLs from trusted providers
+- **File size:** EPG files can be 100+ MB compressed, ensure sufficient disk space
+- **XML parsing:** Malformed XML could cause processing failures or memory issues
+- **Decompression:** gzip/zip files are automatically decompressed, consuming additional disk space
+- **Cron access:** EPG cron runs with file system write access
+
+**Best practices:**
+- ✅ Use HTTPS URLs for EPG sources when available
+- ✅ Monitor disk space usage (EPG files can grow large)
+- ✅ Verify EPG source is legitimate before configuring
+- ✅ Review EPG logs after initial sync (`epg_cron.log`)
+- ❌ Don't use unknown or untrusted EPG sources
+- ❌ Don't ignore EPG sync failures (check `epg_cron_errors.log`)
+
+**Monitor EPG disk usage:**
+```bash
+# Check EPG database size
+mysql -u user -p -e "SELECT table_name, ROUND(((data_length + index_length) / 1024 / 1024), 2) AS 'Size (MB)' FROM information_schema.TABLES WHERE table_schema = 'your_database' AND table_name = 'epg_data';"
+
+# Check temp file space during processing
+du -sh /tmp/
 ```
 
 ### HTTPS/SSL
@@ -154,12 +187,14 @@ Always use HTTPS in production:
 chmod 644 *.php
 chmod 755 .
 
-# Writable directory (if needed)
-chmod 775 uploads/
-
 # Secure sensitive files
 chmod 600 .db_bootstrap
 chmod 600 .installed
+
+# Protect log files
+chmod 600 php_errors.log
+chmod 600 epg_cron.log
+chmod 600 epg_cron_errors.log
 ```
 
 ### Regular Updates
@@ -231,7 +266,12 @@ HAVING attempts >= 5;
 
 ### Monitor Error Logs
 ```bash
+# Application errors
 tail -f php_errors.log
+
+# EPG sync logs
+tail -f epg_cron.log
+tail -f epg_cron_errors.log
 ```
 
 ### Check for Suspicious Activity
@@ -239,6 +279,8 @@ tail -f php_errors.log
 - Login attempts for non-existent users
 - Unusual access times
 - Database connection failures
+- EPG sync failures or repeated errors
+- Abnormal disk space consumption
 
 ---
 
@@ -248,12 +290,12 @@ tail -f php_errors.log
 
 1. **Change password immediately** (Admin → Account)
 2. **Review login attempts:**
-   ```sql
+```sql
    SELECT * FROM login_attempts 
    WHERE username = 'your_username' 
    ORDER BY attempted_at DESC 
    LIMIT 50;
-   ```
+```
 3. **Clear all sessions** (logout and delete session files)
 4. **Check for unauthorized changes** in database
 
@@ -262,23 +304,23 @@ tail -f php_errors.log
 1. **Create new database user** with different password
 2. **Update credentials** (Admin → Database)
 3. **Revoke old user permissions:**
-   ```sql
+```sql
    DROP USER 'old_user'@'localhost';
-   ```
+```
 4. **Review database audit logs** for unauthorized access
 
 ### Server Compromise
 
 1. **Restore from backup**
 2. **Scan for malware:**
-   ```bash
+```bash
    grep -r "eval(base64" .
    grep -r "system(" .
-   ```
+```
 3. **Check file modification times:**
-   ```bash
+```bash
    find . -name "*.php" -mtime -7
-   ```
+```
 4. **Review web server access logs**
 5. **Change all passwords**
 
@@ -292,24 +334,31 @@ tail -f php_errors.log
 - [ ] `.db_bootstrap` protected (chmod 0600 or moved outside web root)
 - [ ] Strong database password (16+ characters)
 - [ ] Database user has minimal permissions
-- [ ] `.htaccess` or nginx rules protecting dotfiles
+- [ ] `.htaccess` or nginx rules protecting dotfiles and log files
 - [ ] `php_errors.log` not web-accessible
+- [ ] `epg_cron.log` and `epg_cron_errors.log` not web-accessible
 - [ ] Playlist files in private directories
+- [ ] EPG URL from trusted source
 - [ ] Error display disabled in production (`display_errors = 0`)
 - [ ] Regular backups configured
 - [ ] Monitoring enabled for failed login attempts
 - [ ] Firewall configured (allow only HTTP/HTTPS/SSH)
 - [ ] SSH key authentication (disable password login)
 - [ ] Server timezone matches application timezone
+- [ ] Sufficient disk space for EPG decompression (500MB+ free recommended)
 
 ### Ongoing Maintenance
 
 - [ ] Review login attempts weekly
+- [ ] Monitor EPG sync status weekly
+- [ ] Check disk space usage monthly
 - [ ] Update application monthly
 - [ ] Update server packages monthly
+- [ ] Review EPG logs for errors monthly
 - [ ] Test backups quarterly
 - [ ] Review user accounts quarterly
 - [ ] Audit file permissions quarterly
+- [ ] Verify EPG source still trusted quarterly
 
 ---
 

@@ -29,7 +29,8 @@ try {
 
 	// Filters - handle both initial load (no filters) and filtered requests
 	$q = '';
-	$group = '';
+	$prefixes = [];
+	$groups = [];
 	$status = ['ok' => 1, 'fail' => 1, 'unknown' => 1];
 	$qual = ['k4' => 0, 'fhd' => 0, 'hd' => 0, 'sd' => 0];
 	$hide = ['ppv' => 0, 't247' => 0];
@@ -37,7 +38,8 @@ try {
 	if (isset($_GET['filters']) && is_array($_GET['filters'])) {
 		$filters = $_GET['filters'];
 		$q = isset($filters['q']) ? (string)$filters['q'] : '';
-		$group = isset($filters['group']) ? (string)$filters['group'] : '';
+		$prefixes = isset($filters['prefixes']) && is_array($filters['prefixes']) ? $filters['prefixes'] : [];
+		$groups = isset($filters['groups']) && is_array($filters['groups']) ? $filters['groups'] : [];
 
 		if (isset($filters['status']) && is_array($filters['status'])) {
 			$status = $filters['status'];
@@ -49,6 +51,9 @@ try {
 			$hide = $filters['hide'];
 		}
 	}
+
+	// Quick filter mode
+	$quick = isset($_GET['quick']) ? (string)$_GET['quick'] : '';
 
 	// Map column index to column name
 	$columns = [
@@ -82,15 +87,60 @@ try {
 
 	// Search
 	if ($q !== '') {
-		$where[] = "(c.tvg_name LIKE :q1 OR c.tvg_id LIKE :q2)";
+		$where[] = "(c.tvg_name LIKE :q1 OR c.tvg_id LIKE :q2 OR f.url LIKE :q3)";
 		$params[':q1'] = '%' . $q . '%';
 		$params[':q2'] = '%' . $q . '%';
+		$params[':q3'] = '%' . $q . '%';
 	}
 
-	// Group filter
-	if ($group !== '') {
-		$where[] = "c.group_title = :grp";
-		$params[':grp'] = $group;
+	// Handle prefixes and individual groups
+	if (!empty($prefixes) || !empty($groups)) {
+		$groupConditions = [];
+
+		// Add prefix matching with LIKE
+		foreach ($prefixes as $idx => $prefix) {
+			if ($prefix !== '') {
+				$placeholder = ":prefix{$idx}";
+				$groupConditions[] = "c.group_title LIKE {$placeholder}";
+				$params[$placeholder] = $prefix . '%';
+			}
+		}
+
+		// Add individual group exact matching
+		foreach ($groups as $idx => $group) {
+			if ($group !== '') {
+				$placeholder = ":grp{$idx}";
+				$groupConditions[] = "c.group_title = {$placeholder}";
+				$params[$placeholder] = $group;
+			}
+		}
+
+		if (!empty($groupConditions)) {
+			$where[] = '(' . implode(' OR ', $groupConditions) . ')';
+		}
+	}
+
+	// Quick filter conditions
+	switch ($quick) {
+		case 'dead':
+			$where[] = "f.last_ok = 0";
+			break;
+		case 'unknown':
+			$where[] = "f.last_checked_at IS NULL";
+			break;
+		case 'recent':
+			$where[] = "f.last_checked_at >= (NOW() - INTERVAL 24 HOUR)";
+			break;
+		case 'top':
+			$where[] = "f.last_ok = 1";
+			$where[] = "COALESCE(f.reliability_score,0) >= 95";
+			break;
+		case 'unstable':
+			$where[] = "f.last_ok = 1";
+			$where[] = "COALESCE(f.reliability_score,0) BETWEEN 50 AND 94.99";
+			break;
+		default:
+			break;
 	}
 
 	// Status filter
@@ -271,8 +321,7 @@ try {
 		$file = ts_filename((string)$r['url_any']);
 
 		$groupTitle = htmlspecialchars((string)$r['group_title']);
-		$groupLink  = 'feeds.php?group=' . urlencode((string)$r['group_title']);
-		$groupHtml = '<a class="text-decoration-none" href="' . $groupLink . '">' . $groupTitle . '</a>';
+		$groupHtml = '<a class="text-decoration-none" href="#" data-group="' . h($groupTitle) . '">' . $groupTitle . '</a>';
 
 		$channelHtml = htmlspecialchars((string)$r['tvg_name']);
 		if ($r['tvg_id']) {

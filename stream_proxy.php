@@ -5,14 +5,20 @@ declare(strict_types=1);
 require_once __DIR__ . '/_boot.php';
 
 // Require authentication
-require_auth();
+if (!is_logged_in()) {
+	header('Content-Type: application/json');
+	http_response_code(401);
+	echo json_encode(['error' => 'Unauthorized']);
+	exit;
+}
 
-// CRITICAL: Close session immediately to prevent blocking
+
+// Close session immediately to prevent blocking
 session_write_close();
 
 $pdo = db();
 
-// CRITICAL: Disable ALL timeouts for streaming
+// Disable ALL timeouts for streaming
 set_time_limit(0);
 ini_set('max_execution_time', '0');
 ini_set('max_input_time', '-1');
@@ -64,6 +70,7 @@ $path = $_GET['path'] ?? '';
 // EARLY DETECTION: Check if this is a .ts stream
 // If so, stream it immediately without buffering
 // ============================================================================
+
 $isTsUrl = preg_match('/\.ts(\?|$)/i', $baseUrl);
 
 if ($isTsUrl && !$path) {
@@ -113,9 +120,11 @@ if ($isTsUrl && !$path) {
 	curl_close($ch);
 	exit;
 }
+
+// ============================================================================
+// Check if we're requesting a .ts segment (even via path parameter)
 // ============================================================================
 
-// Check if we're requesting a .ts segment (even via path parameter)
 $isSegmentRequest = preg_match('/\.ts(\?|$)/i', $path ?: $baseUrl);
 
 // Construct target URL
@@ -270,6 +279,7 @@ if ($httpCode !== 200 && $httpCode !== 206) {
 // HANDLE RAW .TS STREAMS
 // For raw MPEG-TS streams, we need to stream the content continuously
 // ============================================================================
+
 if ($isTsStream && !$isManifest) {
 
 	// For raw TS, we need to re-fetch with streaming enabled (not buffered)
@@ -346,8 +356,8 @@ if ($isTsStream && !$isManifest) {
 	curl_close($ch);
 	exit;
 }
-// ============================================================================
 
+// ============================================================================
 
 if ($isManifest) {
 	// Rewrite manifest URLs to go through our proxy
@@ -402,6 +412,7 @@ exit;
 /**
  * Rewrite M3U8 manifest URLs to point back through our proxy
  */
+
 function rewriteM3U8(string $content, int $feedId, string $baseUrl): string
 {
 	$lines = explode("\n", $content);

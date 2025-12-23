@@ -351,6 +351,186 @@ try {
 		// Limit to top 5 alternatives
 		$alternatives = array_slice($alternatives, 0, 5);
 
+		// === ASSOCIATION MATCHES ===
+		$associationMatches = [];
+
+		// Only get association matches if there are regular alternatives (meaning not optimal)
+		if (count($alternatives) > 0) {
+			// Extract prefix from current group
+			$currentPrefix = '';
+			if (strpos($group, '|') !== false) {
+				$currentPrefix = substr($group, 0, strpos($group, '|') + 1);
+			}
+
+			// Extract base from tvg-id for similarity matching
+			$tvgIdBase = $tvgId;
+			if (strpos($tvgId, '.') !== false) {
+				$tvgIdBase = substr($tvgId, 0, strpos($tvgId, '.'));
+			}
+
+			if ($currentPrefix !== '' && $tvgIdBase !== '') {
+				// Find associations containing this prefix
+				$stAssoc = $pdo->prepare("
+					SELECT DISTINCT ga.id, ga.name
+					FROM group_associations ga
+					JOIN group_association_prefixes gap ON gap.association_id = ga.id
+					WHERE gap.prefix = ?
+				");
+				$stAssoc->execute([$currentPrefix]);
+				$associations = $stAssoc->fetchAll(PDO::FETCH_ASSOC);
+
+				foreach ($associations as $assoc) {
+					// Get OTHER prefixes from this association (exclude current prefix)
+					$stPrefixes = $pdo->prepare("
+						SELECT prefix
+						FROM group_association_prefixes
+						WHERE association_id = ? AND prefix != ?
+					");
+					$stPrefixes->execute([$assoc['id'], $currentPrefix]);
+					$otherPrefixes = $stPrefixes->fetchAll(PDO::FETCH_COLUMN);
+
+					if (empty($otherPrefixes)) {
+						continue;
+					}
+
+					// Build WHERE clause for prefixes
+					$prefixPlaceholders = implode(',', array_fill(0, count($otherPrefixes), '?'));
+
+					// Build params: prefixes + bidirectional matching + exclude clicked tvg-id
+					$assocParams = array_merge($otherPrefixes, ['%' . $tvgIdBase . '%', $tvgId, $tvgId]);
+					$assocParams = array_merge($assocParams, $dateParams);
+
+					// Query for association matches with BIDIRECTIONAL matching
+					if ($hasJunctionTable) {
+						$assocSql = "
+							SELECT 
+								f.id AS feed_id,
+								c.group_title,
+								c.tvg_name,
+								c.tvg_id,
+								AVG(CASE WHEN fc.ok = 1 THEN 100 ELSE 0 END) AS avg_reliability,
+								AVG(fc.w) AS avg_w,
+								AVG(fc.h) AS avg_h,
+								AVG(fc.fps) AS avg_fps,
+								MAX(fc.checked_at) AS last_checked,
+								COUNT(fc.id) AS check_count,
+								f.last_ok,
+								f.reliability_score,
+								f.last_w,
+								f.last_h,
+								f.last_fps,
+								f.last_codec
+							FROM channels c
+							JOIN channel_feeds cf ON cf.channel_id = c.id
+							JOIN feeds f ON f.id = cf.feed_id
+							LEFT JOIN feed_checks fc ON fc.feed_id = f.id {$dateFilter}
+							WHERE CONCAT(SUBSTRING_INDEX(c.group_title, '|', 1), '|') IN ($prefixPlaceholders)
+							AND (
+								c.tvg_id LIKE ?
+								OR ? LIKE CONCAT('%', SUBSTRING_INDEX(c.tvg_id, '.', 1), '%')
+							)
+							AND c.tvg_id != ?
+							GROUP BY f.id, c.group_title, c.tvg_name, c.tvg_id, f.last_ok, f.reliability_score, f.last_w, f.last_h, f.last_fps, f.last_codec
+							HAVING check_count > 0
+							ORDER BY avg_reliability DESC, avg_w DESC, avg_h DESC, avg_fps DESC
+						";
+					} else {
+						$assocSql = "
+							SELECT 
+								f.id AS feed_id,
+								c.group_title,
+								c.tvg_name,
+								c.tvg_id,
+								AVG(CASE WHEN fc.ok = 1 THEN 100 ELSE 0 END) AS avg_reliability,
+								AVG(fc.w) AS avg_w,
+								AVG(fc.h) AS avg_h,
+								AVG(fc.fps) AS avg_fps,
+								MAX(fc.checked_at) AS last_checked,
+								COUNT(fc.id) AS check_count,
+								f.last_ok,
+								f.reliability_score,
+								f.last_w,
+								f.last_h,
+								f.last_fps,
+								f.last_codec
+							FROM channels c
+							JOIN feeds f ON f.channel_id = c.id
+							LEFT JOIN feed_checks fc ON fc.feed_id = f.id {$dateFilter}
+							WHERE CONCAT(SUBSTRING_INDEX(c.group_title, '|', 1), '|') IN ($prefixPlaceholders)
+							AND (
+								c.tvg_id LIKE ?
+								OR ? LIKE CONCAT('%', SUBSTRING_INDEX(c.tvg_id, '.', 1), '%')
+							)
+							AND c.tvg_id != ?
+							GROUP BY f.id, c.group_title, c.tvg_name, c.tvg_id, f.last_ok, f.reliability_score, f.last_w, f.last_h, f.last_fps, f.last_codec
+							HAVING check_count > 0
+							ORDER BY avg_reliability DESC, avg_w DESC, avg_h DESC, avg_fps DESC
+						";
+					}
+
+					$stMatch = $pdo->prepare($assocSql);
+					$stMatch->execute($assocParams);
+					$matches = $stMatch->fetchAll(PDO::FETCH_ASSOC);
+
+					foreach ($matches as $match) {
+						$matchScore = rank_score(
+							$match['last_ok'],
+							$match['avg_reliability'],
+							(int)$match['avg_w'],
+							(int)$match['avg_h'],
+							$match['avg_fps']
+						);
+
+						// Check if ignored
+						$isIgnored = false;
+						if ($hasIgnoresTable) {
+							$ignoreCheck = $pdo->prepare("
+								SELECT 1 FROM group_audit_ignores
+								WHERE tvg_id = :tvg_id
+								AND source_group = :source_group
+								AND suggested_feed_id = :feed_id
+								LIMIT 1
+							");
+							$ignoreCheck->execute([
+								':tvg_id' => $tvgId,
+								':source_group' => $group,
+								':feed_id' => $match['feed_id']
+							]);
+							$isIgnored = (bool)$ignoreCheck->fetchColumn();
+						}
+
+						// Only include if better than current AND not ignored
+						if ($matchScore > $currentScore && !$isIgnored) {
+							$matchResClass = res_class((int)$match['avg_w'], (int)$match['avg_h']);
+							$associationMatches[] = [
+								'association_name' => $assoc['name'],
+								'group' => $match['group_title'],
+								'tvg_name' => $match['tvg_name'],
+								'tvg_id' => $match['tvg_id'],
+								'feed_id' => $match['feed_id'],
+								'score' => $matchScore,
+								'reliability' => round((float)$match['avg_reliability'], 1),
+								'resolution' => $matchResClass,
+								'class_badge' => get_class_badge($matchResClass),
+								'res_display' => round((float)$match['avg_w']) . '×' . round((float)$match['avg_h']),
+								'fps' => round((float)$match['avg_fps'], 2),
+								'check_count' => $match['check_count'],
+								'last_checked' => $match['last_checked']
+							];
+						}
+					}
+				}
+
+				// Sort association matches by score descending
+				usort($associationMatches, function ($a, $b) {
+					return $b['score'] <=> $a['score'];
+				});
+
+				// Limit to top 5 association matches
+				$associationMatches = array_slice($associationMatches, 0, 5);
+			}
+		}
+
 		// Determine status
 		$status = 'optimal'; // green
 		if (!$currentBest) {
@@ -376,7 +556,8 @@ try {
 			'current_res_display' => $currentBest ? round((float)$currentBest['avg_w']) . '×' . round((float)$currentBest['avg_h']) : null,
 			'current_fps' => $currentBest ? round((float)$currentBest['avg_fps'], 2) : null,
 			'current_check_count' => $currentBest ? $currentBest['check_count'] : 0,
-			'alternatives' => $alternatives
+			'alternatives' => $alternatives,
+			'association_matches' => $associationMatches
 		];
 	}
 

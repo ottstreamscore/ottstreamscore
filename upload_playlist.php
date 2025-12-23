@@ -2,118 +2,99 @@
 
 declare(strict_types=1);
 
-ini_set('display_errors', '0');
-ini_set('log_errors', '1');
-error_reporting(E_ALL);
+require_once __DIR__ . '/_boot.php';
 
-try {
-	require_once __DIR__ . '/_boot.php';
-
-	if (!is_logged_in()) {
-		header('Content-Type: application/json');
-		http_response_code(401);
-		echo json_encode(['error' => 'Unauthorized']);
-		exit;
-	}
-
+if (!is_logged_in()) {
 	header('Content-Type: application/json');
-
-	// Ensure playlists directory exists
-	$playlistDir = __DIR__ . '/playlists';
-	if (!file_exists($playlistDir)) {
-		if (!mkdir($playlistDir, 0700, true)) {
-			echo json_encode(['success' => false, 'error' => 'Failed to create playlists directory']);
-			exit;
-		}
-
-		// Create index.php to prevent directory browsing (works on all servers)
-		file_put_contents($playlistDir . '/index.php', "<?php\nhttp_response_code(403);\ndie('Access denied');\n");
-	}
-
-	// Handle chunked upload
-	if (isset($_FILES['file'])) {
-		$file = $_FILES['file'];
-
-		// Get chunk information
-		$chunkIndex = isset($_POST['chunkIndex']) ? intval($_POST['chunkIndex']) : 0;
-		$totalChunks = isset($_POST['totalChunks']) ? intval($_POST['totalChunks']) : 1;
-		$fileName = isset($_POST['fileName']) ? basename($_POST['fileName']) : $file['name'];
-
-		// Validate file type using original filename
-		$allowedExtensions = ['m3u', 'm3u8'];
-		$fileExtension = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
-
-		if (!in_array($fileExtension, $allowedExtensions)) {
-			echo json_encode(['success' => false, 'error' => 'Invalid file type. Only .m3u and .m3u8 files are allowed.']);
-			exit;
-		}
-
-		// Sanitize filename - keep original name but remove dangerous characters
-		$safeFileName = preg_replace('/[^a-zA-Z0-9._-]/', '_', $fileName);
-		$targetFile = $playlistDir . '/' . $safeFileName;
-		$tempFile = $targetFile . '.tmp';
-
-		// Check for errors
-		if ($file['error'] !== UPLOAD_ERR_OK) {
-			// Clean up partial upload
-			if (file_exists($tempFile)) {
-				unlink($tempFile);
-			}
-			echo json_encode(['success' => false, 'error' => 'Upload error: ' . $file['error']]);
-			exit;
-		}
-
-		// Append chunk to temp file
-		$mode = ($chunkIndex === 0) ? 'wb' : 'ab';
-		$out = fopen($tempFile, $mode);
-		$in = fopen($file['tmp_name'], 'rb');
-
-		if ($out && $in) {
-			while ($chunk = fread($in, 8192)) {
-				fwrite($out, $chunk);
-			}
-			fclose($in);
-			fclose($out);
-
-			// If this is the last chunk, finalize
-			if ($chunkIndex === $totalChunks - 1) {
-				// Remove any existing playlist
-				if (file_exists($targetFile)) {
-					unlink($targetFile);
-				}
-
-				// Move temp file to final location
-				if (rename($tempFile, $targetFile)) {
-					echo json_encode([
-						'success' => true,
-						'message' => 'Playlist uploaded successfully',
-						'filename' => $safeFileName,
-						'size' => filesize($targetFile)
-					]);
-				} else {
-					echo json_encode(['success' => false, 'error' => 'Failed to finalize upload']);
-				}
-			} else {
-				// More chunks to come
-				echo json_encode([
-					'success' => true,
-					'chunk' => $chunkIndex + 1,
-					'total' => $totalChunks
-				]);
-			}
-		} else {
-			// Clean up on failure
-			if (file_exists($tempFile)) {
-				unlink($tempFile);
-			}
-			echo json_encode(['success' => false, 'error' => 'Failed to write file']);
-		}
-	} else {
-		echo json_encode(['success' => false, 'error' => 'No file uploaded']);
-	}
-} catch (Throwable $e) {
-	error_log('upload_playlist.php error: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
-	header('Content-Type: application/json');
-	http_response_code(500);
-	echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+	http_response_code(401);
+	echo json_encode(['success' => false, 'error' => 'Unauthorized']);
+	exit;
 }
+
+session_write_close();
+header('Content-Type: application/json');
+
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+	echo json_encode(['success' => false, 'error' => 'Invalid request method']);
+	exit;
+}
+
+$pdo = get_db_connection();
+$playlistUrl = get_setting('playlist_url', '');
+
+if (empty($playlistUrl)) {
+	echo json_encode(['success' => false, 'error' => 'No playlist URL configured']);
+	exit;
+}
+
+$outputFile = __DIR__ . '/playlists/playlist_temp.m3u';
+$progressFile = __DIR__ . '/playlists/download_progress.json';
+
+if (!is_dir(__DIR__ . '/playlists')) {
+	mkdir(__DIR__ . '/playlists', 0755, true);
+}
+
+file_put_contents($progressFile, json_encode([
+	'downloaded' => 0,
+	'total' => 0,
+	'status' => 'starting'
+]));
+
+$ch = curl_init($playlistUrl);
+$fp = fopen($outputFile, 'w');
+
+if (!$fp) {
+	echo json_encode(['success' => false, 'error' => 'Cannot create temp file']);
+	exit;
+}
+
+$updateCount = 0;
+
+// Use CURL's native progress function
+curl_setopt($ch, CURLOPT_NOPROGRESS, false);
+curl_setopt($ch, CURLOPT_PROGRESSFUNCTION, function ($resource, $download_size, $downloaded, $upload_size, $uploaded) use ($progressFile, &$updateCount) {
+	$updateCount++;
+	// Update every 5 calls to reduce file I/O
+	if ($updateCount % 5 === 0) {
+		file_put_contents($progressFile, json_encode([
+			'downloaded' => $downloaded,
+			'total' => $download_size,
+			'status' => 'downloading'
+		]));
+	}
+	return 0;
+});
+
+curl_setopt($ch, CURLOPT_FILE, $fp);
+curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+curl_setopt($ch, CURLOPT_TIMEOUT, 300);
+curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 30);
+
+$result = curl_exec($ch);
+$httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+$error = curl_error($ch);
+
+curl_close($ch);
+fclose($fp);
+
+@unlink($progressFile);
+
+if (!$result) {
+	@unlink($outputFile);
+	echo json_encode(['success' => false, 'error' => 'Download failed: ' . $error]);
+	exit;
+}
+
+if ($httpCode !== 200) {
+	@unlink($outputFile);
+	echo json_encode(['success' => false, 'error' => 'HTTP Error ' . $httpCode]);
+	exit;
+}
+
+if (!file_exists($outputFile) || filesize($outputFile) === 0) {
+	@unlink($outputFile);
+	echo json_encode(['success' => false, 'error' => 'Downloaded file is empty']);
+	exit;
+}
+
+echo json_encode(['success' => true, 'message' => 'Playlist downloaded successfully']);

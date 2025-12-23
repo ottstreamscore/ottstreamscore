@@ -382,6 +382,88 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 				}
 				$tab = 'creds';
 				break;
+
+			case 'create_association':
+				$name = sanitize_input($_POST['association_name'] ?? '');
+				if (empty($name)) {
+					$error = 'Association name is required';
+				} else {
+					try {
+						$stmt = $pdo->prepare("INSERT INTO group_associations (name) VALUES (?)");
+						$stmt->execute([$name]);
+						$success = "Association '$name' created successfully";
+					} catch (Exception $e) {
+						$error = 'Failed to create association: ' . $e->getMessage();
+					}
+				}
+				$tab = 'associations';
+				break;
+
+			case 'update_association_name':
+				$id = (int)($_POST['association_id'] ?? 0);
+				$name = sanitize_input($_POST['association_name'] ?? '');
+				if ($id <= 0 || empty($name)) {
+					$error = 'Invalid association data';
+				} else {
+					try {
+						$stmt = $pdo->prepare("UPDATE group_associations SET name = ? WHERE id = ?");
+						$stmt->execute([$name, $id]);
+						$success = 'Association name updated successfully';
+					} catch (Exception $e) {
+						$error = 'Failed to update association: ' . $e->getMessage();
+					}
+				}
+				$tab = 'associations';
+				break;
+
+			case 'delete_association':
+				$id = (int)($_POST['association_id'] ?? 0);
+				if ($id <= 0) {
+					$error = 'Invalid association ID';
+				} else {
+					try {
+						$stmt = $pdo->prepare("DELETE FROM group_associations WHERE id = ?");
+						$stmt->execute([$id]);
+						$success = 'Association deleted successfully';
+					} catch (Exception $e) {
+						$error = 'Failed to delete association: ' . $e->getMessage();
+					}
+				}
+				$tab = 'associations';
+				break;
+
+			case 'add_prefix':
+				$id = (int)($_POST['association_id'] ?? 0);
+				$prefix = sanitize_input($_POST['prefix'] ?? '');
+				if ($id <= 0 || empty($prefix)) {
+					$error = 'Invalid data';
+				} else {
+					try {
+						$stmt = $pdo->prepare("INSERT IGNORE INTO group_association_prefixes (association_id, prefix) VALUES (?, ?)");
+						$stmt->execute([$id, $prefix]);
+						$success = 'Prefix added successfully';
+					} catch (Exception $e) {
+						$error = 'Failed to add prefix: ' . $e->getMessage();
+					}
+				}
+				$tab = 'associations';
+				break;
+
+			case 'remove_prefix':
+				$prefix_id = (int)($_POST['prefix_id'] ?? 0);
+				if ($prefix_id <= 0) {
+					$error = 'Invalid prefix ID';
+				} else {
+					try {
+						$stmt = $pdo->prepare("DELETE FROM group_association_prefixes WHERE id = ?");
+						$stmt->execute([$prefix_id]);
+						$success = 'Prefix removed successfully';
+					} catch (Exception $e) {
+						$error = 'Failed to remove prefix: ' . $e->getMessage();
+					}
+				}
+				$tab = 'associations';
+				break;
 		}
 	}
 }
@@ -417,45 +499,64 @@ if (file_exists($bootstrap_file)) {
 	}
 }
 
+// Get all group associations with their prefixes
+// Force a fresh connection to avoid any caching issues
+$pdo = null;
+$pdo = get_db_connection();
+$associations = [];
+try {
+	// First get all associations without the join
+	$stmt = $pdo->query("SELECT id, name, created_at FROM group_associations ORDER BY name");
+	$associations = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+	// Then get prefix count for each
+	foreach ($associations as &$assoc) {
+		$stmt = $pdo->prepare("SELECT COUNT(*) FROM group_association_prefixes WHERE association_id = ?");
+		$stmt->execute([$assoc['id']]);
+		$assoc['prefix_count'] = (int)$stmt->fetchColumn();
+	}
+	unset($assoc); // Break reference
+
+	// Get prefixes for each association
+	foreach ($associations as &$assoc) {
+		$stmt = $pdo->prepare("
+			SELECT id, prefix 
+			FROM group_association_prefixes 
+			WHERE association_id = ? 
+			ORDER BY prefix
+		");
+		$stmt->execute([$assoc['id']]);
+		$assoc['prefixes'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+		// Get array of prefix strings for easy checking
+		$assoc['prefix_list'] = array_column($assoc['prefixes'], 'prefix');
+	}
+	unset($assoc); // Break reference - CRITICAL!
+} catch (Exception $e) {
+	// Silently fail
+	$associations = [];
+}
+
+// Get all available prefixes from channels with counts
+$available_prefixes = [];
+try {
+	$stmt = $pdo->query("
+		SELECT 
+			CONCAT(SUBSTRING_INDEX(group_title, '|', 1), '|') as prefix,
+			COUNT(DISTINCT id) as channel_count
+		FROM channels 
+		WHERE group_title LIKE '%|%'
+		GROUP BY prefix
+		ORDER BY prefix
+	");
+	$available_prefixes = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (Exception $e) {
+	$available_prefixes = [];
+}
+
 ?>
 
 <style>
-	.tabs {
-		background: var(--bg-card);
-		border-radius: 8px;
-		box-shadow: 0 2px 4px var(--shadow);
-		overflow: hidden;
-	}
-
-	.tab-nav {
-		display: flex;
-		background: var(--bg-secondary);
-		border-bottom: 1px solid var(--border-color);
-	}
-
-	.tab-link {
-		padding: 15px 25px;
-		color: var(--text-secondary);
-		text-decoration: none;
-		border-bottom: 3px solid transparent;
-		transition: all 0.2s;
-	}
-
-	.tab-link:hover {
-		background: var(--table-hover);
-		color: var(--text-primary);
-	}
-
-	.tab-link.active {
-		color: #667eea;
-		border-bottom-color: #667eea;
-		background: var(--bg-card);
-	}
-
-	.tab-content {
-		padding: 30px;
-	}
-
 	.alert {
 		padding: 12px 16px;
 		border-radius: 6px;
@@ -561,22 +662,25 @@ if (file_exists($bootstrap_file)) {
 		margin-bottom: 20pt;
 	}
 
-	@media (max-width: 768px) {
-		.two-col {
-			grid-template-columns: 1fr;
+	@media (max-width: 992px) {
+		.admin-container {
+			flex-direction: column;
 		}
 
-		.header {
-			flex-direction: column;
-			gap: 15px;
-			text-align: center;
+		.admin-sidebar {
+			position: static;
+			flex: 0 0 auto;
+		}
+
+		.two-col {
+			grid-template-columns: 1fr;
 		}
 	}
 </style>
 
 
 <div class="row">
-	<div class="header">
+	<div class="header mb-3">
 		<h2><i class="fa-solid fa-gear me-1"></i> Administration</h2>
 	</div>
 
@@ -588,29 +692,50 @@ if (file_exists($bootstrap_file)) {
 		<div class="alert alert-danger"><?php echo htmlspecialchars($error); ?></div>
 	<?php endif; ?>
 
-	<div class="tabs">
-		<div class="tab-nav">
-			<a href="admin.php?tab=settings" class="tab-link <?php echo $tab === 'settings' ? 'active' : ''; ?>">
-				Application Settings
-			</a>
-			<a href="admin.php?tab=playlist" class="tab-link <?php echo $tab === 'playlist' ? 'active' : ''; ?>">
-				Sync Playlist
-			</a>
-			<a href="admin.php?tab=creds" class="tab-link <?php echo $tab === 'creds' ? 'active' : ''; ?>">
-				Update Stream Credentials
-			</a>
-			<a href="admin.php?tab=users" class="tab-link <?php echo $tab === 'users' ? 'active' : ''; ?>">
-				User Management
-			</a>
-			<a href="admin.php?tab=database" class="tab-link <?php echo $tab === 'database' ? 'active' : ''; ?>">
-				Database
-			</a>
-			<a href="admin.php?tab=account" class="tab-link <?php echo $tab === 'account' ? 'active' : ''; ?>">
-				Change Password
-			</a>
+	<div class="admin-container">
+		<!-- Sidebar Navigation -->
+		<div class="admin-sidebar">
+			<h5>Settings</h5>
+			<div class="sidebar-nav">
+				<a href="admin.php?tab=settings" class="sidebar-link <?php echo $tab === 'settings' ? 'active' : ''; ?>">
+					<i class="fa-solid fa-gears"></i>
+					<span>Application Settings</span>
+				</a>
+				<a href="admin.php?tab=playlist" class="sidebar-link <?php echo $tab === 'playlist' ? 'active' : ''; ?>">
+					<i class="fa-solid fa-list"></i>
+					<span>Sync Playlist & EPG</span>
+				</a>
+				<a href="admin.php?tab=associations" class="sidebar-link <?php echo $tab === 'associations' ? 'active' : ''; ?>">
+					<i class="fa-solid fa-diagram-project"></i>
+					<span>Group Associations</span>
+				</a>
+				<a href="admin.php?tab=creds" class="sidebar-link <?php echo $tab === 'creds' ? 'active' : ''; ?>">
+					<i class="fa-solid fa-key"></i>
+					<span>Stream Credentials</span>
+				</a>
+				<a href="admin.php?tab=users" class="sidebar-link <?php echo $tab === 'users' ? 'active' : ''; ?>">
+					<i class="fa-solid fa-users"></i>
+					<span>User Management</span>
+				</a>
+				<a href="admin.php?tab=database" class="sidebar-link <?php echo $tab === 'database' ? 'active' : ''; ?>">
+					<i class="fa-solid fa-database"></i>
+					<span>Database</span>
+				</a>
+			</div>
+
+			<div class="sidebar-divider"></div>
+
+			<h5>Account</h5>
+			<div class="sidebar-nav">
+				<a href="admin.php?tab=account" class="sidebar-link password-link <?php echo $tab === 'account' ? 'active' : ''; ?>">
+					<i class="fa-solid fa-lock"></i>
+					<span>Change Password</span>
+				</a>
+			</div>
 		</div>
 
-		<div class="tab-content">
+		<!-- Main Content -->
+		<div class="admin-content">
 			<?php if ($tab === 'settings'): ?>
 				<h2 class="admin_section"><i class="fa-solid fa-gears me-1"></i> Application Settings</h2>
 
@@ -846,9 +971,9 @@ if (file_exists($bootstrap_file)) {
 
 				<div class="d-flex justify-content-between align-items-center mb-3">
 					<div>
-						<h2 class="admin_section"><i class="fa-solid fa-rotate me-1"></i> Sync Playlist</h2>
+						<h2 class="admin_section"><i class="fa-solid fa-list me-1"></i> Sync Playlist & EPG Settings</h2>
 						<div class="text-muted">
-							Upload and sync your M3U playlist into the database. Only imports <strong>LIVE</strong> entries (URLs containing <code>/live/</code>).
+							Configure your playlist URL and sync your M3U playlist into the database. Only imports <strong>LIVE</strong> entries (URLs containing <code>/live/</code>).
 						</div>
 					</div>
 				</div>
@@ -876,253 +1001,548 @@ if (file_exists($bootstrap_file)) {
 					</div>
 				<?php endif; ?>
 
-				<!-- Upload Section -->
-				<div class="card shadow-sm mb-3" id="upload-section">
-					<div class="card-header fw-semibold"><i class="fa-solid fa-cloud-arrow-up me-1"></i> Upload Playlist</div>
+				<?php
+				$savedUrl = get_setting('playlist_url', '');
+				$lastSyncDate = get_setting('last_sync_date', '');
+				?>
+
+				<!-- URL Configuration Section -->
+				<div class="card shadow-sm mb-3" id="url-section">
+					<div class="card-header fw-semibold"><i class="fa-solid fa-link me-1"></i> Playlist URL</div>
 					<div class="card-body">
-						<div class="mb-3">
-							<input type="file" id="playlist-file" accept=".m3u,.m3u8" style="display:none;">
-							<button type="button" class="btn btn-primary" id="select-file-btn">
-								<i class="fa-solid fa-file me-1"></i> Select Playlist File
-							</button>
-							<button type="button" class="btn btn-success" id="upload-btn" style="display:none;">
-								<i class="fa-solid fa-upload me-1"></i> Upload Playlist
-							</button>
-							<span id="selected-file-name" class="ms-2 text-muted"></span>
-						</div>
-
-						<!-- Upload Progress -->
-						<div id="upload-progress-container" style="display:none;">
-							<div class="progress" style="height: 25px;">
-								<div id="upload-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated"
-									role="progressbar" style="width: 0%;">0%</div>
+						<?php echo csrf_field(); ?>
+						<?php if (empty($savedUrl)): ?>
+							<!-- No URL saved yet -->
+							<div class="mb-3">
+								<label for="playlist-url" class="form-label">Enter Playlist URL</label>
+								<input type="url" id="playlist-url" class="form-control" placeholder="https://example.com/playlist.m3u">
+								<small class="text-muted">Public URL to your M3U/M3U8 playlist file</small>
 							</div>
-							<div id="upload-status" class="text-muted small mt-2"></div>
-						</div>
-
-						<div class="alert alert-info small mt-3 mb-0">
-							<i class="fa-solid fa-info-circle me-1"></i>
-							Supports large playlist files (80MB+). Upload happens in the background with progress tracking.
-						</div>
+							<button type="button" class="btn btn-primary" id="save-url-btn">
+								<i class="fa-solid fa-save me-1"></i> Save URL
+							</button>
+						<?php else: ?>
+							<!-- URL saved -->
+							<div class="mb-3">
+								<label class="form-label">Current Playlist URL</label>
+								<div class="input-group">
+									<input type="text" class="form-control" value="<?= h($savedUrl) ?>" readonly>
+									<button type="button" class="btn btn-outline-warning" id="change-url-btn">
+										<i class="fa-solid fa-edit me-1"></i> Change URL
+									</button>
+								</div>
+							</div>
+							<?php if ($lastSyncDate): ?>
+								<div class="alert alert-info small mb-3">
+									<i class="fa-solid fa-clock me-1"></i> Last sync: <strong><?= h(date('Y-m-d H:i:s', strtotime($lastSyncDate))) ?></strong>
+								</div>
+							<?php endif; ?>
+							<button type="button" class="btn btn-outline-success" id="fetch-playlist-btn">
+								<i class="fa-solid fa-download me-1"></i> Fetch Playlist
+							</button>
+						<?php endif; ?>
 					</div>
 				</div>
 
-				<!-- Import Section -->
-				<div class="card shadow-sm mb-3" id="import-section" style="display:none;">
-					<div class="card-header fw-semibold"><i class="fa-solid fa-file-import me-1"></i> Import Playlist</div>
+				<!-- Fetch Progress -->
+				<div class="card shadow-sm mb-3" id="fetch-progress-section" style="display:none;">
+					<div class="card-header fw-semibold"><i class="fa-solid fa-download me-1"></i> Downloading Playlist</div>
 					<div class="card-body">
+						<div class="progress" style="height: 30px;">
+							<div id="fetch-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated"
+								role="progressbar" style="width: 0%;">0%</div>
+						</div>
+						<div id="fetch-progress-status" class="text-center text-muted mt-2 small">Initializing download...</div>
+					</div>
+				</div>
 
-						<!-- Playlist Info -->
-						<div id="playlist-info" class="alert alert-secondary">
+				<!-- Preview Section -->
+				<div class="card shadow-sm mb-3" id="preview-section" style="display:none;">
+					<div class="card-header fw-semibold"><i class="fa-solid fa-eye me-1"></i> Playlist Preview</div>
+					<div class="card-body">
+						<div id="playlist-stats" class="alert alert-secondary mb-3">
 							<!-- Populated by JavaScript -->
 						</div>
 
-						<div class="mb-3">
-							<button type="button" class="btn btn-success" id="start-import-btn">
-								<i class="fa-solid fa-arrows-rotate me-1"></i> Sync Playlist
+						<!-- Credentials Section -->
+						<div id="credentials-section">
+							<div class="alert alert-info">
+								<div class="d-flex justify-content-between align-items-center">
+									<div>
+										<strong>Current Stream Credentials:</strong><br>
+										<span class="text-muted">Username:</span> <code id="current-username">—</code><br>
+										<span class="text-muted">Password:</span> <code id="current-password">—</code>
+									</div>
+									<button type="button" class="btn btn-sm btn-warning" id="edit-credentials-btn">
+										<i class="fa-solid fa-key me-1"></i> Change Credentials
+									</button>
+								</div>
+							</div>
+
+							<!-- Credential Edit Form -->
+							<div id="credentials-form" style="display:none;" class="mb-3">
+								<div class="card">
+									<div class="card-header fw-semibold">Update Stream Credentials</div>
+									<div class="card-body">
+										<div class="row">
+											<div class="col-md-6 mb-3">
+												<label for="new-username" class="form-label">New Username</label>
+												<input type="text" id="new-username" class="form-control" placeholder="Enter username">
+											</div>
+											<div class="col-md-6 mb-3">
+												<label for="confirm-username" class="form-label">Confirm Username</label>
+												<input type="text" id="confirm-username" class="form-control" placeholder="Re-enter username">
+											</div>
+										</div>
+										<div class="row">
+											<div class="col-md-6 mb-3">
+												<label for="new-password" class="form-label">New Password</label>
+												<input type="text" id="new-password" class="form-control" placeholder="Enter password">
+											</div>
+											<div class="col-md-6 mb-3">
+												<label for="confirm-password" class="form-label">Confirm Password</label>
+												<input type="text" id="confirm-password" class="form-control" placeholder="Re-enter password">
+											</div>
+										</div>
+										<button type="button" class="btn btn-primary" id="save-credentials-btn">
+											<i class="fa-solid fa-check me-1"></i> Apply New Credentials
+										</button>
+										<button type="button" class="btn btn-secondary" id="cancel-credentials-btn">
+											<i class="fa-solid fa-times me-1"></i> Cancel
+										</button>
+									</div>
+								</div>
+							</div>
+						</div>
+
+						<div class="mt-3">
+							<button type="button" class="btn btn-success" id="import-now-btn">
+								<i class="fa-solid fa-arrows-rotate me-1"></i> Sync Now
 							</button>
-							<button type="button" class="btn btn-danger" id="remove-playlist-btn">
-								<i class="fa-solid fa-trash me-1"></i> Remove Playlist
+							<button type="button" class="btn btn-outline-danger" id="cancel-preview-btn">
+								<i class="fa-solid fa-trash me-1"></i> Cancel
 							</button>
 						</div>
 
-						<!-- Import Processing Indicator -->
+						<!-- Import Processing -->
 						<div id="import-processing-container" style="display:none;" class="mt-4 text-center">
 							<div class="mb-3">
 								<i class="fa-solid fa-spinner fa-spin fa-3x text-primary"></i>
 							</div>
 							<div class="h5 text-muted">Processing playlist...</div>
-							<div class="small text-muted">This may take a few moments for large playlists</div>
-						</div>
-
-						<div class="alert alert-warning small mt-3 mb-0" id="import-warning">
-							<i class="fa-solid fa-triangle-exclamation me-1"></i>
-							Processing may take a few moments. You'll see a summary when complete.
+							<div class="small text-muted"><strong>Please be patient.</storng> This process can take quite some time with large playlists. Results will show when processing is complete.</div>
 						</div>
 					</div>
 				</div>
 
+
 				<!-- Import Results -->
-				<div class="card shadow-sm" id="import-results" style="display:none;">
+				<div class="card shadow-sm mb-3" id="import-results-container" style="display:none;">
 					<div class="card-header fw-semibold"><i class="fa-solid fa-check-circle me-1"></i> Import Complete</div>
 					<div class="card-body">
-						<div id="results-content"></div>
-						<button type="button" class="btn btn-primary mt-3" id="new-import-btn">
-							<i class="fa-solid fa-cloud-arrow-up me-1"></i> Upload Another Playlist
+						<div class="alert alert-success mb-0">
+							<div id="import-results-content"></div>
+						</div>
+						<button type="button" class="btn btn-outline-primary mt-3" onclick="window.location.reload();">
+							<i class="fa-regular fa-circle-check"></i> Done
 						</button>
 					</div>
 				</div>
 
+				<!-- Change URL Modal -->
+				<div id="change-url-modal" class="modal" style="display:none; position:fixed; z-index:1050; left:0; top:0; width:100%; height:100%; overflow:auto; background-color:rgba(0,0,0,0.4);">
+					<div class="modal-dialog" style="margin:100px auto; max-width:600px;">
+						<div class="modal-content" style="border-radius:8px; box-shadow:0 4px 6px rgba(0,0,0,0.1); padding:10pt; padding-top:0;">
+							<div class="modal-header" style="border-bottom:1px solid #dee2e6; margin-bottom:15px; padding-bottom:15px;">
+								<h5 class="modal-title" style="margin:0;"><i class="fa-solid fa-triangle-exclamation me-1 text-warning"></i> Change Playlist URL</h5>
+								<button type="button" class="btn-close" onclick="document.getElementById('change-url-modal').style.display='none';" style="border:none; background:none; font-size:24px; cursor:pointer;">&times;</button>
+							</div>
+							<div class="modal-body">
+								<div class="alert alert-warning" style="font-weight:normal;">
+									<strong>Warning:</strong> Changing the playlist URL will <span class="text-danger">PERMANENTLY DELETE</span> all current and historical playlist data, including channels, feeds, and monitoring history. If you only need to update your playlist credentials, use the <a href="admin.php?tab=creds">Change Stream Credentials</a> option in the preview section instead.
+								</div>
+								<div class="mb-3">
+									<label for="new-playlist-url" class="form-label">New Playlist URL</label>
+									<input type="url" id="new-playlist-url" class="form-control" placeholder="https://example.com/new-playlist.m3u">
+								</div>
+								<div class="form-check mb-3">
+									<input type="checkbox" id="confirm-clear-data" class="form-check-input">
+									<label for="confirm-clear-data" class="form-check-label">
+										<strong>I understand this will clear all channels, feeds, and monitoring data</strong>
+									</label>
+								</div>
+							</div>
+							<div class="modal-footer" style="border-top:1px solid #dee2e6; margin-top:15px; padding-top:15px; display:flex; gap:10px; justify-content:flex-end;">
+								<button type="button" class="btn btn-secondary" onclick="document.getElementById('change-url-modal').style.display='none';">Cancel</button>
+								<button type="button" class="btn btn-danger" id="confirm-change-url-btn">
+									<i class="fa-solid fa-trash me-1"></i> Clear All Playlist Data and Use New URL
+								</button>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<!-- EPG URL Configuration Section -->
+				<?php
+				$savedEpgUrl = get_setting('epg_url', '');
+				$lastEpgSyncDate = get_setting('epg_last_sync_date', '');
+				?>
+				<div class="card shadow-sm mb-3" id="epg-url-section">
+					<div class="card-header fw-semibold"><i class="fa-solid fa-link me-1"></i> EPG URL (optional)</div>
+					<div class="card-body">
+						<?php echo csrf_field(); ?>
+						<div class="mb-3">
+							<label for="epg-url" class="form-label">EPG XML URL</label>
+							<input type="url" id="epg-url" class="form-control"
+								placeholder="https://example.com/epg.xml"
+								value="<?= h($savedEpgUrl) ?>">
+							<small class="text-muted">Public URL to your EPG XML file (processed by cron). Accepted: .xml, .gz</small>
+						</div>
+						<button type="button" class="btn btn-outline-primary" id="save-epg-url-btn">
+							<i class="fa-solid fa-save me-1"></i> Save EPG URL
+						</button>
+
+						<?php if (!empty($savedEpgUrl)): ?>
+							<div class="alert alert-info small mt-3 mb-0" style="font-weight:normal;">
+								<i class="fa-solid fa-clock me-1"></i>
+
+								<?php if ($lastEpgSyncDate): ?>
+									Last sync: <strong><?= h(date('Y-m-d H:i:s', strtotime($lastEpgSyncDate))) ?></strong>
+								<?php else: ?>
+									<strong>Not processed yet, pending cron</strong>
+								<?php endif; ?>
+							</div>
+						<?php endif; ?>
+
+						<div id="epg-save-success" class="alert alert-success small mt-3" style="display:none;">
+							<i class="fa-solid fa-check-circle me-1"></i> EPG URL saved successfully
+						</div>
+					</div>
+				</div>
+
+				<!-- Cron Job Settings -->
+				<div class="card shadow-sm mb-3">
+					<div class="card-header fw-semibold" style="cursor: pointer;" data-bs-toggle="collapse" data-bs-target="#cron-settings-collapse">
+						<i class="fa-solid fa-clock me-1"></i> Cron Job Settings
+						<i class="fa-solid fa-chevron-down float-end"></i>
+					</div>
+					<div id="cron-settings-collapse" class="collapse">
+						<div class="card-body" style="font-weight:normal;">
+							<p>Remember to configure your server cron jobs:</p>
+							<div class="mb-3">
+								<strong>Feed Check Cron</strong> (Run every 5 minutes)
+								<pre class="p-2 mt-1 mb-0" style="background: var(--bs-secondary-bg); border: 1px solid var(--bs-border-color); border-radius: 4px;"><code>*/5 * * * * /usr/bin/php /path/to/install/cron_check_feeds.php</code></pre>
+							</div>
+							<div>
+								<strong>EPG Update Cron</strong> (Run twice daily at 12 AM and 12 PM)
+								<pre class="p-2 mt-1 mb-0" style="background: var(--bs-secondary-bg); border: 1px solid var(--bs-border-color); border-radius: 4px;"><code>0 0,12 * * * /usr/bin/php /path/to/install/epg_cron.php</code></pre>
+							</div>
+						</div>
+					</div>
+				</div>
+
+
 				<script>
 					(function() {
-						const CHUNK_SIZE = 1024 * 1024;
-						let selectedFile = null;
+						let pendingCredentials = null;
 
-						if ($('#upload-section').length) {
-							checkForPlaylist();
-						}
+						checkForTempPlaylist();
 
-						$('#select-file-btn').on('click', function() {
-							$('#playlist-file').click();
-						});
-
-						$('#playlist-file').on('change', function(e) {
-							selectedFile = e.target.files[0];
-							if (selectedFile) {
-								const ext = selectedFile.name.split('.').pop().toLowerCase();
-								if (ext !== 'm3u' && ext !== 'm3u8') {
-									alert('Please select a valid M3U or M3U8 file.');
-									selectedFile = null;
-									return;
-								}
-								$('#selected-file-name').text(selectedFile.name + ' (' + formatBytes(selectedFile.size) + ')');
-								$('#upload-btn').show();
+						$('#save-url-btn').on('click', function() {
+							const url = $('#playlist-url').val().trim();
+							if (!url) {
+								alert('Please enter a valid URL');
+								return;
 							}
+							savePlaylistUrl(url, false);
 						});
 
-						$('#upload-btn').on('click', function() {
-							if (!selectedFile) return;
-							uploadPlaylist(selectedFile);
+						$('#save-epg-url-btn').on('click', function() {
+							const url = $('#epg-url').val().trim();
+							if (!url) {
+								alert('Please enter a valid EPG URL');
+								return;
+							}
+							saveEpgUrl(url);
 						});
 
-						$('#start-import-btn').on('click', function() {
+						$('#change-url-btn').on('click', function() {
+							$('#change-url-modal').show();
+						});
+
+						$('#confirm-change-url-btn').on('click', function() {
+							const url = $('#new-playlist-url').val().trim();
+							const confirmed = $('#confirm-clear-data').is(':checked');
+
+							if (!url) {
+								alert('Please enter a valid URL');
+								return;
+							}
+							if (!confirmed) {
+								alert('You must confirm that you understand all data will be cleared');
+								return;
+							}
+
+							$('#change-url-modal').hide();
+							savePlaylistUrl(url, true);
+						});
+
+						$('#fetch-playlist-btn').on('click', function() {
+							fetchPlaylist();
+						});
+
+						$('#edit-credentials-btn').on('click', function() {
+							$('#credentials-form').slideDown();
+							$(this).hide();
+						});
+
+						$('#cancel-credentials-btn').on('click', function() {
+							$('#credentials-form').slideUp();
+							$('#edit-credentials-btn').show();
+							clearCredentialFields();
+						});
+
+						$('#save-credentials-btn').on('click', function() {
+							const username = $('#new-username').val().trim();
+							const confirmUsername = $('#confirm-username').val().trim();
+							const password = $('#new-password').val().trim();
+							const confirmPassword = $('#confirm-password').val().trim();
+
+							if (!username || !password) {
+								alert('Username and password are required');
+								return;
+							}
+							if (username !== confirmUsername) {
+								alert('Usernames do not match');
+								return;
+							}
+							if (password !== confirmPassword) {
+								alert('Passwords do not match');
+								return;
+							}
+
+							pendingCredentials = {
+								username: username,
+								password: password
+							};
+							$('#current-username').text(username);
+							$('#current-password').text(password);
+							$('#credentials-form').slideUp();
+							$('#edit-credentials-btn').show();
+							clearCredentialFields();
+
+							alert('Credentials will be applied when you click "Sync Now"');
+						});
+
+						$('#import-now-btn').on('click', function() {
 							startImport();
 						});
 
-						$('#remove-playlist-btn').on('click', function() {
-							if (confirm('Remove uploaded playlist and start over?')) {
-								$.ajax({
-									url: 'delete_playlist.php',
-									type: 'POST',
-									dataType: 'json',
-									success: function() {
-										showUploadSection();
-									},
-									error: function() {
-										alert('Failed to remove playlist. Please try again.');
-									}
-								});
+						$('#cancel-preview-btn').on('click', function() {
+							if (confirm('Cancel and remove downloaded playlist?')) {
+								deleteTempPlaylist();
+								resetToUrlSection();
 							}
 						});
 
-						$('#new-import-btn').on('click', function() {
-							window.location.reload();
-						});
-
-						function checkForPlaylist() {
+						function savePlaylistUrl(url, clearData) {
 							$.ajax({
-								url: 'check_playlist.php',
-								type: 'GET',
+								url: 'playlist_api.php?action=save_url',
+								type: 'POST',
+								data: {
+									url: url,
+									clear_data: clearData ? '1' : '0',
+									csrf_token: $('input[name="csrf_token"]').first().val()
+								},
 								dataType: 'json',
 								success: function(response) {
-									if (response.success && response.hasPlaylist) {
-										showImportSection(response);
+									if (response.success) {
+										window.location.reload();
 									} else {
-										showUploadSection();
+										alert('Error: ' + response.error);
 									}
 								},
 								error: function() {
-									showUploadSection();
+									alert('Failed to save URL. Please try again.');
 								}
 							});
 						}
 
-						function uploadPlaylist(file) {
-							const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-							let currentChunk = 0;
+						function saveEpgUrl(url) {
+							$('#save-epg-url-btn').prop('disabled', true);
+							$('#epg-save-success').hide();
 
-							$('#upload-btn').hide();
-							$('#select-file-btn').prop('disabled', true);
-							$('#upload-progress-container').show();
-							updateUploadProgress(0, 'Starting upload...');
 
-							function uploadNextChunk() {
-								const start = currentChunk * CHUNK_SIZE;
-								const end = Math.min(start + CHUNK_SIZE, file.size);
-								const chunk = file.slice(start, end);
 
-								const formData = new FormData();
-								formData.append('file', chunk);
-								formData.append('fileName', file.name);
-								formData.append('chunkIndex', currentChunk);
-								formData.append('totalChunks', totalChunks);
+							$.ajax({
+								url: 'playlist_api.php?action=save_epg_url',
+								type: 'POST',
+								data: {
+									epg_url: url,
+									csrf_token: $('input[name="csrf_token"]').first().val(),
+								},
+								dataType: 'json',
+								success: function(response) {
+									$('#save-epg-url-btn').prop('disabled', false);
+									if (response.success) {
+										$('#epg-save-success').fadeIn();
+										setTimeout(function() {
+											window.location.reload();
+										}, 700);
+									} else {
+										alert('Error: ' + response.error);
+									}
+								},
+								error: function() {
+									$('#save-epg-url-btn').prop('disabled', false);
+									alert('Failed to save EPG URL. Please try again.');
+								}
+							});
+						}
+
+						function fetchPlaylist() {
+							$('#fetch-playlist-btn').prop('disabled', true);
+							$('#fetch-progress-section').show();
+							$('#fetch-progress-bar').css('width', '0%').text('0%');
+							$('#fetch-progress-status').text('Initializing download...');
+
+							let downloadComplete = false;
+
+							const progressInterval = setInterval(function() {
+								if (downloadComplete) {
+									clearInterval(progressInterval);
+									return;
+								}
 
 								$.ajax({
-									url: 'upload_playlist.php',
-									type: 'POST',
-									data: formData,
-									processData: false,
-									contentType: false,
-									success: function(response) {
-										if (response.success) {
-											currentChunk++;
-											const progress = Math.round((currentChunk / totalChunks) * 100);
-											updateUploadProgress(progress, 'Uploading... ' + progress + '%');
+									url: 'playlist_api.php?action=get_progress',
+									type: 'GET',
+									dataType: 'json',
+									success: function(data) {
+										if (data.success && data.total > 0 && data.downloaded > 0) {
+											var percent = Math.round((data.downloaded / data.total) * 100);
+											var downloadedMB = (data.downloaded / (1024 * 1024)).toFixed(2);
+											var totalMB = (data.total / (1024 * 1024)).toFixed(2);
 
-											if (currentChunk < totalChunks) {
-												uploadNextChunk();
-											} else {
-												updateUploadProgress(100, 'Upload complete!');
-												setTimeout(function() {
-													checkForPlaylist();
-												}, 500);
-											}
-										} else {
-											alert('Upload failed: ' + response.error);
-											resetUploadUI();
+											$('#fetch-progress-bar')
+												.removeClass('progress-bar-animated')
+												.css('width', percent + '%')
+												.text(percent + '%');
+											$('#fetch-progress-status').text('Downloaded ' + downloadedMB + ' MB of ' + totalMB + ' MB');
+										} else if (data.downloaded > 0) {
+											var downloadedMB = (data.downloaded / (1024 * 1024)).toFixed(2);
+											$('#fetch-progress-bar')
+												.addClass('progress-bar-animated')
+												.css('width', '100%')
+												.text('Downloading...');
+											$('#fetch-progress-status').text('Downloaded ' + downloadedMB + ' MB');
 										}
-									},
-									error: function() {
-										alert('Upload failed. Please try again.');
-										resetUploadUI();
 									}
 								});
-							}
-							uploadNextChunk();
+							}, 500);
+
+							$.ajax({
+								url: 'upload_playlist.php',
+								type: 'POST',
+								dataType: 'json',
+								success: function(response) {
+									downloadComplete = true;
+									clearInterval(progressInterval);
+									$('#fetch-progress-section').hide();
+									if (response.success) {
+										loadPlaylistStats();
+									} else {
+										$('#fetch-playlist-btn').prop('disabled', false);
+										alert('Error: ' + response.error);
+									}
+								},
+								error: function() {
+									downloadComplete = true;
+									clearInterval(progressInterval);
+									$('#fetch-progress-section').hide();
+									$('#fetch-playlist-btn').prop('disabled', false);
+									alert('Failed to fetch playlist. Please try again.');
+								}
+							});
+						}
+
+						function loadPlaylistStats() {
+							$.ajax({
+								url: 'playlist_api.php?action=get_stats',
+								type: 'GET',
+								dataType: 'json',
+								success: function(response) {
+									if (response.success) {
+										showPreview(response);
+									} else {
+										alert('Error: ' + response.error);
+										$('#fetch-playlist-btn').prop('disabled', false);
+									}
+								},
+								error: function() {
+									alert('Failed to load playlist stats');
+									$('#fetch-playlist-btn').prop('disabled', false);
+								}
+							});
+						}
+
+						function showPreview(data) {
+							$('#url-section').hide();
+							$('#preview-section').show();
+							$('#import-results-container').hide();
+
+							const statsHtml = '<p class="mb-1"><strong>Total Entries:</strong> ' + data.totalEntries + '</p>' +
+								'<p class="mb-1"><strong>Live Channels:</strong> ' + data.liveChannels + '</p>' +
+								'<p class="mb-0"><strong>File Size:</strong> ' + data.fileSize + '</p>';
+							$('#playlist-stats').html(statsHtml);
+
+							$('#current-username').text(data.currentUsername || '—');
+							$('#current-password').text(data.currentPassword || '—');
 						}
 
 						function startImport() {
-							// Hide buttons and warning
-							$('#start-import-btn').prop('disabled', true);
-							$('#remove-playlist-btn').prop('disabled', true);
-							$('#import-warning').hide();
-
-							// Show spinner
+							$('#import-now-btn').prop('disabled', true);
+							$('#cancel-preview-btn').prop('disabled', true);
 							$('#import-processing-container').show();
+							$('#import-results-container').hide();
+
+							const postData = {
+								mode: 'sync',
+								_ajax: '1'
+							};
+
+							if (pendingCredentials) {
+								postData.new_username = pendingCredentials.username;
+								postData.new_password = pendingCredentials.password;
+							}
 
 							$.ajax({
 								url: 'import_handler.php',
 								type: 'POST',
-								data: {
-									mode: 'sync',
-									_ajax: '1'
-								},
+								data: postData,
 								dataType: 'json',
-								timeout: 300000, // 5 minute timeout
+								timeout: 300000,
 								success: function(response) {
-									// Hide spinner
+									console.log('Import response:', response);
 									$('#import-processing-container').hide();
 
-									// Check if completed
-									if (response.status === 'completed') {
+									if (response.status === 'completed' && response.ok) {
+										deleteTempPlaylist();
 										showImportResults(response);
 									} else {
-										// Unexpected response
-										alert('Import returned unexpected status: ' + (response.status || 'unknown'));
-										$('#start-import-btn').prop('disabled', false);
-										$('#remove-playlist-btn').prop('disabled', false);
-										$('#import-warning').show();
+										alert('Import failed: ' + (response.message || 'Unknown error'));
+										$('#import-now-btn').prop('disabled', false);
+										$('#cancel-preview-btn').prop('disabled', false);
 									}
 								},
 								error: function(xhr, status, error) {
-									// Hide spinner
+									console.log('Import error - Status:', status, 'Error:', error);
+									console.log('Response text:', xhr.responseText);
 									$('#import-processing-container').hide();
-									$('#start-import-btn').prop('disabled', false);
-									$('#remove-playlist-btn').prop('disabled', false);
-									$('#import-warning').show();
-
+									$('#import-now-btn').prop('disabled', false);
+									$('#cancel-preview-btn').prop('disabled', false);
 									if (status === 'timeout') {
-										alert('Import timed out. Check your database - the import may have completed.');
+										alert('Import timed out. The process may still be running. Check your database.');
 									} else {
 										alert('Import failed: ' + error);
 									}
@@ -1131,90 +1551,387 @@ if (file_exists($bootstrap_file)) {
 						}
 
 						function showImportResults(response) {
-							$('#import-section').hide();
-							$('#import-results').show();
+							console.log('Showing import results with data:', response);
 
-							let html = '<div class="alert alert-' + (response.ok ? 'success' : 'danger') + '">';
-							html += '<div class="fw-semibold mb-1">';
-							html += response.ok ? '<i class="fa-solid fa-check-circle me-1"></i> Import Completed' : '<i class="fa-solid fa-times-circle me-1"></i> Import Failed';
-							html += '</div>';
+							$('#preview-section').hide();
+							$('#import-results-container').show();
+
+							let html = '';
 
 							if (response.message) {
-								html += '<div class="small">' + response.message + '</div>';
+								html += '<p class="mb-3">' + response.message + '</p>';
 							}
 
-							if (response.stats) {
-								html += '<hr><div class="row small">';
+							if (response.stats && typeof response.stats === 'object' && Object.keys(response.stats).length > 0) {
+								html += '<hr><div class="row small mt-3">';
 								for (let key in response.stats) {
-									html += '<div class="col-md-4 mb-2">';
+									html += '<div class="col-md-4 mb-3">';
 									html += '<div class="text-muted">' + key + '</div>';
 									html += '<div class="fw-semibold">' + response.stats[key] + '</div>';
 									html += '</div>';
 								}
 								html += '</div>';
+							} else {
+								console.warn('No stats found in response or stats is empty');
 							}
-							html += '</div>';
-							$('#results-content').html(html);
 
-							// Delete playlist after showing results
-							if (response.ok) {
-								deletePlaylist();
-							}
+							$('#import-results-content').html(html);
+							console.log('Results HTML inserted');
 						}
 
-						function deletePlaylist() {
+						function resetToUrlSection() {
+							$('#preview-section').hide();
+							$('#import-results-container').hide();
+							$('#url-section').show();
+							$('#fetch-playlist-btn').prop('disabled', false);
+							pendingCredentials = null;
+						}
+
+						function deleteTempPlaylist() {
 							$.ajax({
-								url: 'delete_playlist.php',
+								url: 'playlist_api.php?action=delete_temp',
 								type: 'POST',
 								dataType: 'json'
 							});
 						}
 
-						function showUploadSection() {
-							$('#upload-section').show();
-							$('#import-section').hide();
-							$('#import-results').hide();
-							resetUploadUI();
+						function checkForTempPlaylist() {
+							$.ajax({
+								url: 'playlist_api.php?action=get_stats',
+								type: 'GET',
+								dataType: 'json',
+								success: function(response) {
+									if (response.success) {
+										showPreview(response);
+									}
+								}
+							});
 						}
 
-						function showImportSection(playlistData) {
-							$('#upload-section').hide();
-							$('#import-section').show();
-							$('#import-results').hide();
-							$('#import-processing-container').hide();
-							$('#import-warning').show();
-							$('#start-import-btn').prop('disabled', false);
-							$('#remove-playlist-btn').prop('disabled', false);
-
-							const html = '<p class="mb-1"><i class="fa-solid fa-file me-1"></i> <strong>Filename:</strong> ' + playlistData.filename + '</p>' +
-								'<p class="mb-1"><i class="fa-solid fa-database me-1"></i> <strong>Size:</strong> ' + playlistData.sizeFormatted + '</p>' +
-								'<p class="mb-0"><i class="fa-solid fa-clock me-1"></i> <strong>Uploaded:</strong> ' + playlistData.uploaded + '</p>';
-							$('#playlist-info').html(html);
-						}
-
-						function updateUploadProgress(percent, status) {
-							$('#upload-progress-bar').css('width', percent + '%').text(percent + '%');
-							$('#upload-status').text(status);
-						}
-
-						function resetUploadUI() {
-							selectedFile = null;
-							$('#playlist-file').val('');
-							$('#selected-file-name').text('');
-							$('#upload-btn').hide();
-							$('#select-file-btn').prop('disabled', false);
-							$('#upload-progress-container').hide();
-							updateUploadProgress(0, '');
-						}
-
-						function formatBytes(bytes) {
-							if (bytes === 0) return '0 Bytes';
-							const k = 1024;
-							const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-							const i = Math.floor(Math.log(bytes) / Math.log(k));
-							return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+						function clearCredentialFields() {
+							$('#new-username, #confirm-username, #new-password, #confirm-password').val('');
 						}
 					})();
+				</script>
+
+			<?php elseif ($tab === 'associations'): ?>
+
+				<h2 class="admin_section"><i class="fa-solid fa-diagram-project me-1"></i> Group Associations</h2>
+
+				<div class="settings-info mb-4">
+					<i class="fa-solid fa-info-circle me-1"></i>
+					Group regional prefixes (US|, UK|, CA|) to find channels with different but similar <strong>tvg-id</strong> values across regions. Less precise than tvg-id matching, but useful for discovering streams showing the same content from other regions.
+				</div>
+
+				<?php if (empty($associations)): ?>
+					<!-- Empty State -->
+					<div class="text-center py-5">
+						<i class="fa-solid fa-diagram-project fa-4x text-muted mb-3" style="opacity: 0.3;"></i>
+						<h4>No Group Associations</h4>
+						<p class="text-muted">Create your first association to link channel prefixes across regions.</p>
+						<button type="button" class="btn btn-primary mt-3" data-bs-toggle="modal" data-bs-target="#createAssociationModal">
+							<i class="fa-solid fa-plus me-1"></i> Create Association
+						</button>
+					</div>
+				<?php else: ?>
+					<!-- Associations List -->
+					<div class="mb-4">
+						<button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#createAssociationModal">
+							<i class="fa-solid fa-plus me-1"></i> Create Association
+						</button>
+					</div>
+
+					<div class="row g-3">
+						<?php foreach ($associations as $assoc): ?>
+							<div class="col-md-6">
+								<div class="card shadow-sm">
+									<div class="card-header d-flex justify-content-between align-items-center">
+										<div class="fw-semibold">
+											<?= h($assoc['name']) ?>
+											<span class="badge bg-secondary ms-2"><?= $assoc['prefix_count'] ?> prefix<?= $assoc['prefix_count'] != 1 ? 'es' : '' ?></span>
+										</div>
+										<div>
+											<button type="button" class="btn btn-sm btn-outline-primary btn-edit-assoc me-1"
+												data-id="<?= $assoc['id'] ?>"
+												data-name="<?= h($assoc['name']) ?>">
+												<i class="fa-solid fa-pen m"></i>
+											</button>
+											<button type="button" class="btn btn-sm btn-outline-danger btn-delete-assoc"
+												data-id="<?= $assoc['id'] ?>"
+												data-name="<?= h($assoc['name']) ?>">
+												<i class="fa-solid fa-trash"></i>
+											</button>
+										</div>
+									</div>
+									<div class="card-body">
+										<?php if (empty($assoc['prefixes'])): ?>
+											<p class="text-muted small mb-0" style="margin-bottom:8pt !important;">No prefixes added yet</p>
+										<?php else: ?>
+											<div class="d-flex flex-wrap gap-2 mb-3">
+												<?php foreach ($assoc['prefixes'] as $prefix): ?>
+													<span class="badge bg-light text-dark border">
+														<?= h($prefix['prefix']) ?>
+														<button type="button" class="btn-close btn-close-sm ms-1"
+															style="font-size: 0.6rem; vertical-align: middle;"
+															onclick="removePrefix(<?= $prefix['id'] ?>)"></button>
+													</span>
+												<?php endforeach; ?>
+											</div>
+										<?php endif; ?>
+										<button type="button" class="btn btn-sm btn-outline-secondary"
+											data-bs-toggle="modal" data-bs-target="#addPrefixModal<?= $assoc['id'] ?>">
+											<i class="fa-solid fa-plus me-1"></i> Add Prefix
+										</button>
+									</div>
+								</div>
+							</div>
+
+							<!-- Add Prefix Modal for this association -->
+							<div class="modal fade" id="addPrefixModal<?= $assoc['id'] ?>" tabindex="-1">
+								<div class="modal-dialog modal-lg">
+									<div class="modal-content">
+										<div class="modal-header">
+											<h5 class="modal-title">Add Prefixes to "<?= h($assoc['name']) ?>"</h5>
+											<button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+										</div>
+										<div class="modal-body">
+											<!-- Search box -->
+											<div class="mb-3">
+												<input type="text" class="form-control"
+													id="prefixSearch<?= $assoc['id'] ?>"
+													placeholder="Search prefixes..."
+													onkeyup="filterPrefixes<?= $assoc['id'] ?>(this.value)">
+											</div>
+
+											<!-- Prefix list -->
+											<form method="post" action="admin.php?tab=associations" id="addPrefixForm<?= $assoc['id'] ?>">
+												<?= csrf_field() ?>
+												<input type="hidden" name="action" value="add_prefix">
+												<input type="hidden" name="association_id" value="<?= $assoc['id'] ?>">
+												<input type="hidden" name="prefix" id="selectedPrefix<?= $assoc['id'] ?>">
+
+												<div style="max-height: 400px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 6px; padding: 10px; padding-left:20pt;">
+													<?php if (empty($available_prefixes)): ?>
+														<p class="text-muted text-center">No prefixes found in database</p>
+													<?php else: ?>
+														<?php foreach ($available_prefixes as $prefix_data):
+															$prefix = $prefix_data['prefix'];
+															$count = $prefix_data['channel_count'];
+															$already_added = in_array($prefix, $assoc['prefix_list']);
+														?>
+															<div class="prefix-item<?= $assoc['id'] ?> form-check mb-2 p-2"
+																style="border-radius: 4px; <?= $already_added ? 'opacity: 0.5; background: var(--bs-secondary-bg);' : 'cursor: pointer;' ?>"
+																data-prefix="<?= h($prefix) ?>"
+																<?= !$already_added ? 'onclick="selectPrefix' . $assoc['id'] . '(\'' . h($prefix) . '\')"' : '' ?>>
+																<input class="form-check-input" type="radio"
+																	name="prefix_radio"
+																	value="<?= h($prefix) ?>"
+																	id="prefix_<?= $assoc['id'] ?>_<?= h($prefix) ?>"
+																	<?= $already_added ? 'disabled' : '' ?>>
+																<label class="form-check-label w-100" for="prefix_<?= $assoc['id'] ?>_<?= h($prefix) ?>"
+																	style="cursor: <?= $already_added ? 'not-allowed' : 'pointer' ?>">
+																	<strong><?= h($prefix) ?></strong>
+																	<span class="text-muted ms-2">(<?= $count ?> channels)</span>
+																	<?php if ($already_added): ?>
+																		<span class="badge bg-secondary ms-2">Already added</span>
+																	<?php endif; ?>
+																</label>
+															</div>
+														<?php endforeach; ?>
+													<?php endif; ?>
+												</div>
+											</form>
+										</div>
+										<div class="modal-footer">
+											<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+											<button type="button" class="btn btn-primary" onclick="submitAddPrefix<?= $assoc['id'] ?>()">
+												Add Selected Prefix
+											</button>
+										</div>
+									</div>
+								</div>
+							</div>
+
+							<script>
+								function filterPrefixes<?= $assoc['id'] ?>(searchTerm) {
+									const items = document.querySelectorAll('.prefix-item<?= $assoc['id'] ?>');
+									const search = searchTerm.toLowerCase();
+
+									items.forEach(item => {
+										const prefix = item.getAttribute('data-prefix').toLowerCase();
+										if (prefix.includes(search)) {
+											item.style.display = '';
+										} else {
+											item.style.display = 'none';
+										}
+									});
+								}
+
+								function selectPrefix<?= $assoc['id'] ?>(prefix) {
+									document.getElementById('selectedPrefix<?= $assoc['id'] ?>').value = prefix;
+									// Update radio button
+									const radio = document.getElementById('prefix_<?= $assoc['id'] ?>_' + prefix);
+									if (radio && !radio.disabled) {
+										radio.checked = true;
+									}
+								}
+
+								function submitAddPrefix<?= $assoc['id'] ?>() {
+									const selected = document.getElementById('selectedPrefix<?= $assoc['id'] ?>').value;
+									if (!selected) {
+										alert('Please select a prefix');
+										return;
+									}
+									document.getElementById('addPrefixForm<?= $assoc['id'] ?>').submit();
+								}
+							</script>
+						<?php endforeach; ?>
+					</div>
+				<?php endif; ?>
+
+				<!-- Create Association Modal -->
+				<div class="modal fade" id="createAssociationModal" tabindex="-1">
+					<div class="modal-dialog">
+						<div class="modal-content">
+							<form method="post" action="admin.php?tab=associations">
+								<?= csrf_field() ?>
+								<input type="hidden" name="action" value="create_association">
+								<div class="modal-header">
+									<h5 class="modal-title">Create New Association</h5>
+									<button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+								</div>
+								<div class="modal-body">
+									<label class="form-label">Association Name</label>
+									<input type="text" name="association_name" class="form-control"
+										placeholder="e.g., English Speaking Countries" required maxlength="100">
+									<small class="text-muted">Give this association a descriptive name</small>
+								</div>
+								<div class="modal-footer">
+									<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+									<button type="submit" class="btn btn-primary">Create</button>
+								</div>
+							</form>
+						</div>
+					</div>
+				</div>
+
+				<!-- Edit Association Name Modal -->
+				<div class="modal fade" id="editAssociationModal" tabindex="-1">
+					<div class="modal-dialog">
+						<div class="modal-content">
+							<form method="post" action="admin.php?tab=associations" id="editAssociationForm">
+								<?= csrf_field() ?>
+								<input type="hidden" name="action" value="update_association_name">
+								<input type="hidden" name="association_id" id="edit_association_id">
+								<div class="modal-header">
+									<h5 class="modal-title">Edit Association Name</h5>
+									<button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+								</div>
+								<div class="modal-body">
+									<label class="form-label">Association Name</label>
+									<input type="text" name="association_name" id="edit_association_name"
+										class="form-control" required maxlength="100">
+								</div>
+								<div class="modal-footer">
+									<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+									<button type="submit" class="btn btn-primary">Save Changes</button>
+								</div>
+							</form>
+						</div>
+					</div>
+				</div>
+
+				<script>
+					// Clear create association modal when closed
+					document.getElementById('createAssociationModal').addEventListener('hidden.bs.modal', function() {
+						this.querySelector('input[name="association_name"]').value = '';
+					});
+
+					// Edit association button handler
+					document.addEventListener('click', function(e) {
+						if (e.target.closest('.btn-edit-assoc')) {
+							const btn = e.target.closest('.btn-edit-assoc');
+							const id = btn.getAttribute('data-id');
+							const name = btn.getAttribute('data-name');
+							document.getElementById('edit_association_id').value = id;
+							document.getElementById('edit_association_name').value = name;
+							new bootstrap.Modal(document.getElementById('editAssociationModal')).show();
+						}
+					});
+
+					// Delete association button handler
+					document.addEventListener('click', function(e) {
+						if (e.target.closest('.btn-delete-assoc')) {
+							const btn = e.target.closest('.btn-delete-assoc');
+							const id = btn.getAttribute('data-id');
+							const name = btn.getAttribute('data-name');
+
+							if (!confirm('Delete association "' + name + '"? This will also remove all associated prefixes.')) {
+								return;
+							}
+
+							const form = document.createElement('form');
+							form.method = 'POST';
+							form.action = 'admin.php?tab=associations';
+
+							// Add CSRF field
+							const csrfInput = document.createElement('input');
+							csrfInput.type = 'hidden';
+							csrfInput.name = 'csrf_token';
+							csrfInput.value = '<?= $_SESSION["csrf_token"] ?? "" ?>';
+							form.appendChild(csrfInput);
+
+							// Add action field
+							const actionInput = document.createElement('input');
+							actionInput.type = 'hidden';
+							actionInput.name = 'action';
+							actionInput.value = 'delete_association';
+							form.appendChild(actionInput);
+
+							// Add association_id field
+							const idInput = document.createElement('input');
+							idInput.type = 'hidden';
+							idInput.name = 'association_id';
+							idInput.value = id;
+							form.appendChild(idInput);
+
+							document.body.appendChild(form);
+							form.submit();
+						}
+					});
+
+					function removePrefix(prefixId) {
+						if (!confirm('Remove this prefix from the association?')) {
+							return;
+						}
+						const form = document.createElement('form');
+						form.method = 'POST';
+						form.action = 'admin.php?tab=associations';
+
+						// Add CSRF field
+						const csrfInput = document.createElement('input');
+						csrfInput.type = 'hidden';
+						csrfInput.name = 'csrf_token';
+						csrfInput.value = '<?= $_SESSION["csrf_token"] ?? "" ?>';
+						form.appendChild(csrfInput);
+
+						// Add action field
+						const actionInput = document.createElement('input');
+						actionInput.type = 'hidden';
+						actionInput.name = 'action';
+						actionInput.value = 'remove_prefix';
+						form.appendChild(actionInput);
+
+						// Add prefix_id field
+						const prefixIdInput = document.createElement('input');
+						prefixIdInput.type = 'hidden';
+						prefixIdInput.name = 'prefix_id';
+						prefixIdInput.value = prefixId;
+						form.appendChild(prefixIdInput);
+
+						document.body.appendChild(form);
+						form.submit();
+					}
 				</script>
 
 			<?php elseif ($tab === 'creds'): ?>
@@ -1222,8 +1939,8 @@ if (file_exists($bootstrap_file)) {
 				<h2 class="admin_section"><i class="fa-solid fa-user-gear me-1"></i> Update Saved Stream Credentials</h2>
 
 				<div class="settings-info">
-					This updates all <code>/live/{user}/{pass}/</code> URLs that start with <code><?php echo htmlspecialchars(get_setting('stream_host', '')); ?></code>,
-					regenerates <code>url_hash</code>, and keeps <code>url_display</code> masked.
+					This updates all <code>/live/{user}/{pass}/</code> URLs that start with <code><?php echo htmlspecialchars(get_setting('stream_host', '')); ?></code> and
+					regenerates <code>url_hash</code>.
 				</div>
 
 				<form method="post" action="admin.php?tab=creds">
@@ -1509,8 +2226,8 @@ if (file_exists($bootstrap_file)) {
 				</div>
 
 			<?php endif; ?>
-		</div>
-	</div>
-</div>
+		</div> <!-- .admin-content -->
+	</div> <!-- .admin-container -->
+</div> <!-- .row -->
 
 <?php require_once __DIR__ . '/_bottom.php'; ?>

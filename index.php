@@ -319,7 +319,7 @@ $recent = $pdo->query("
 						<td><?= $classBadge ?></td>
 						<td><?= h($resDisp) ?></td>
 						<td class="text-end"><?= h($fpsDisp) ?></td>
-						<td><?= fmt_dt($checkedAt) ?></td>
+						<td class="text-muted small"><?= fmt_dt($checkedAt) ?></td>
 
 						<!-- hidden sort helpers -->
 						<td style="display:none;"><?= (int)$sr ?></td>

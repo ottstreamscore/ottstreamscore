@@ -205,6 +205,256 @@ try {
 	];
 }
 
+// Migration: Create group_associations table
+try {
+	$result = $pdo->query("SHOW TABLES LIKE 'group_associations'");
+	$table_exists = $result->rowCount() > 0;
+
+	if (!$table_exists) {
+		$sql = "CREATE TABLE `group_associations` (
+			`id` INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+			`name` VARCHAR(100) NOT NULL,
+			`created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+			`updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+			INDEX `idx_name` (`name`)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+
+		$pdo->exec($sql);
+		$migrations[] = [
+			'status' => 'success',
+			'message' => 'Created group_associations table'
+		];
+	} else {
+		$migrations[] = [
+			'status' => 'skipped',
+			'message' => 'group_associations table already exists'
+		];
+	}
+} catch (PDOException $e) {
+	$migrations[] = [
+		'status' => 'error',
+		'message' => "Failed to create group_associations table: " . $e->getMessage()
+	];
+}
+
+// Migration: Create group_association_prefixes table
+try {
+	$result = $pdo->query("SHOW TABLES LIKE 'group_association_prefixes'");
+	$table_exists = $result->rowCount() > 0;
+
+	if (!$table_exists) {
+		$sql = "CREATE TABLE `group_association_prefixes` (
+			`id` INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+			`association_id` INT UNSIGNED NOT NULL,
+			`prefix` VARCHAR(20) NOT NULL,
+			`created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE KEY `unique_association_prefix` (`association_id`, `prefix`),
+			INDEX `idx_prefix` (`prefix`),
+			INDEX `idx_association_id` (`association_id`),
+			CONSTRAINT `fk_assoc_prefix_assoc` FOREIGN KEY (`association_id`) REFERENCES `group_associations` (`id`) ON DELETE CASCADE
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+
+		$pdo->exec($sql);
+		$migrations[] = [
+			'status' => 'success',
+			'message' => 'Created group_association_prefixes table'
+		];
+	} else {
+		$migrations[] = [
+			'status' => 'skipped',
+			'message' => 'group_association_prefixes table already exists'
+		];
+	}
+} catch (PDOException $e) {
+	$migrations[] = [
+		'status' => 'error',
+		'message' => "Failed to create group_association_prefixes table: " . $e->getMessage()
+	];
+}
+
+// Migration: Create group_audit_ignores table
+try {
+	$result = $pdo->query("SHOW TABLES LIKE 'group_audit_ignores'");
+	$table_exists = $result->rowCount() > 0;
+
+	if (!$table_exists) {
+		$sql = "CREATE TABLE `group_audit_ignores` (
+			`id` INT AUTO_INCREMENT PRIMARY KEY,
+			`tvg_id` VARCHAR(255) NOT NULL,
+			`source_group` VARCHAR(255) NOT NULL,
+			`suggested_group` VARCHAR(255) NOT NULL,
+			`suggested_feed_id` BIGINT(20) UNSIGNED NOT NULL,
+			`suggested_tvg_name` VARCHAR(255) DEFAULT NULL,
+			`created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE KEY `unique_ignore` (`tvg_id`, `source_group`, `suggested_feed_id`),
+			INDEX `idx_tvg_source` (`tvg_id`, `source_group`)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci";
+
+		$pdo->exec($sql);
+		$migrations[] = [
+			'status' => 'success',
+			'message' => 'Created group_audit_ignores table'
+		];
+	} else {
+		$migrations[] = [
+			'status' => 'skipped',
+			'message' => 'group_audit_ignores table already exists'
+		];
+	}
+} catch (PDOException $e) {
+	$migrations[] = [
+		'status' => 'error',
+		'message' => "Failed to create group_audit_ignores table: " . $e->getMessage()
+	];
+}
+
+// Migration: Create editor_todo_list table
+try {
+	$result = $pdo->query("SHOW TABLES LIKE 'editor_todo_list'");
+	$table_exists = $result->rowCount() > 0;
+
+	if (!$table_exists) {
+		$sql = "CREATE TABLE `editor_todo_list` (
+			`id` INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+			`tvg_id` VARCHAR(255) NOT NULL,
+			`source_group` VARCHAR(255) NOT NULL,
+			`suggested_group` VARCHAR(255) NOT NULL,
+			`suggested_feed_id` BIGINT(20) UNSIGNED NOT NULL,
+			`created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			`created_by_user` INT UNSIGNED NOT NULL,
+			`category` ENUM('feed_replacement','feed_review','epg_adjustment','other') NOT NULL,
+			`note` TEXT DEFAULT NULL,
+			INDEX `idx_tvg_source` (`tvg_id`, `source_group`),
+			INDEX `idx_category` (`category`),
+			INDEX `idx_created_by` (`created_by_user`)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci";
+
+		$pdo->exec($sql);
+		$migrations[] = [
+			'status' => 'success',
+			'message' => 'Created editor_todo_list table'
+		];
+	} else {
+		$migrations[] = [
+			'status' => 'skipped',
+			'message' => 'editor_todo_list table already exists'
+		];
+	}
+} catch (PDOException $e) {
+	$migrations[] = [
+		'status' => 'error',
+		'message' => "Failed to create editor_todo_list table: " . $e->getMessage()
+	];
+}
+
+// Migration: Create editor_todo_list_log table
+try {
+	$result = $pdo->query("SHOW TABLES LIKE 'editor_todo_list_log'");
+	$table_exists = $result->rowCount() > 0;
+
+	if (!$table_exists) {
+		$sql = "CREATE TABLE `editor_todo_list_log` (
+			`id` INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+			`original_todo_id` INT UNSIGNED NOT NULL,
+			`tvg_id` VARCHAR(255) NOT NULL,
+			`source_group` VARCHAR(255) NOT NULL,
+			`suggested_group` VARCHAR(255) NOT NULL,
+			`suggested_feed_id` BIGINT(20) UNSIGNED NOT NULL,
+			`created_at` TIMESTAMP NOT NULL,
+			`created_by_user` INT UNSIGNED NOT NULL,
+			`category` ENUM('feed_replacement','feed_review','epg_adjustment','other') NOT NULL,
+			`note` TEXT DEFAULT NULL,
+			`completed_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			`completed_by_user` INT UNSIGNED NOT NULL,
+			`completion_status` ENUM('completed','deleted') NOT NULL,
+			INDEX `idx_original_todo` (`original_todo_id`),
+			INDEX `idx_tvg_source` (`tvg_id`, `source_group`),
+			INDEX `idx_category` (`category`),
+			INDEX `idx_completion_status` (`completion_status`)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci";
+
+		$pdo->exec($sql);
+		$migrations[] = [
+			'status' => 'success',
+			'message' => 'Created editor_todo_list_log table'
+		];
+	} else {
+		$migrations[] = [
+			'status' => 'skipped',
+			'message' => 'editor_todo_list_log table already exists'
+		];
+	}
+} catch (PDOException $e) {
+	$migrations[] = [
+		'status' => 'error',
+		'message' => "Failed to create editor_todo_list_log table: " . $e->getMessage()
+	];
+}
+
+try {
+	$result = $pdo->query("SHOW TABLES LIKE 'epg_data'");
+	$table_exists = $result->rowCount() > 0;
+
+	if (!$table_exists) {
+		$sql = "CREATE TABLE `epg_data` (
+			`id` INT AUTO_INCREMENT PRIMARY KEY,
+			`tvg_id` VARCHAR(255) NOT NULL,
+			`start_timestamp` DATETIME NOT NULL,
+			`end_timestamp` DATETIME NOT NULL,
+			`title` VARCHAR(500) NOT NULL,
+			`description` TEXT,
+			INDEX `idx_tvg_id` (`tvg_id`),
+			INDEX `idx_start_time` (`start_timestamp`),
+			INDEX `idx_tvg_start` (`tvg_id`, `start_timestamp`)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+
+		$pdo->exec($sql);
+		$migrations[] = [
+			'status' => 'success',
+			'message' => 'Created epg_data table'
+		];
+	} else {
+		$migrations[] = [
+			'status' => 'skipped',
+			'message' => 'epg_data table already exists'
+		];
+	}
+} catch (PDOException $e) {
+	$migrations[] = [
+		'status' => 'error',
+		'message' => "Failed to create epg_data table: " . $e->getMessage()
+	];
+}
+// Migration: Add new playlist-related settings
+try {
+	$sql = "INSERT IGNORE INTO `settings` (`setting_key`, `setting_value`, `description`) VALUES 
+		('playlist_url', '', 'URL to hosted M3U playlist'),
+		('last_sync_date', NULL, 'Last successful playlist sync timestamp'),
+		('epg_last_sync_date', NULL, 'Last successful EPG sync timestamp'),
+		('epg_url', '', 'URL to hosted EPG XML file')";
+
+	$stmt = $pdo->prepare($sql);
+	$stmt->execute();
+	$rowsAffected = $stmt->rowCount();
+
+	if ($rowsAffected > 0) {
+		$migrations[] = [
+			'status' => 'success',
+			'message' => "Added $rowsAffected new playlist settings"
+		];
+	} else {
+		$migrations[] = [
+			'status' => 'skipped',
+			'message' => 'Playlist settings already exist'
+		];
+	}
+} catch (PDOException $e) {
+	$migrations[] = [
+		'status' => 'error',
+		'message' => "Failed to add playlist settings: " . $e->getMessage()
+	];
+}
+
 // Create playlists directory
 $playlistsDir = __DIR__ . '/playlists';
 if (!file_exists($playlistsDir)) {

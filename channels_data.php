@@ -49,7 +49,10 @@ try {
 	$length = clamp_int($_GET['length'] ?? 50, 1, 250, 50);
 
 	$q     = cut((string)($_GET['q'] ?? ''), 120);
-	$group = cut((string)($_GET['group'] ?? ''), 200);
+	$prefixes = isset($_GET['prefixes']) && is_array($_GET['prefixes']) ? $_GET['prefixes'] : [];
+	$groups = isset($_GET['groups']) && is_array($_GET['groups']) ? $_GET['groups'] : [];
+	$hidePPV = (string)($_GET['hide_ppv'] ?? '0') === '1';
+	$hide247 = (string)($_GET['hide_247'] ?? '0') === '1';
 
 	// ----- WHERE -----
 	$where = [];
@@ -60,9 +63,69 @@ try {
 		$params[':q1'] = "%{$q}%";
 		$params[':q2'] = "%{$q}%";
 	}
-	if ($group !== '') {
-		$where[] = 'c.group_title = :g';
-		$params[':g'] = $group;
+
+	// Handle prefixes and individual groups
+	if (!empty($prefixes) || !empty($groups)) {
+		$groupConditions = [];
+
+		// Add prefix matching with LIKE
+		foreach ($prefixes as $idx => $prefix) {
+			$prefixTrimmed = cut($prefix, 200);
+			if ($prefixTrimmed !== '') {
+				$placeholder = ":prefix{$idx}";
+				$groupConditions[] = "c.group_title LIKE {$placeholder}";
+				$params[$placeholder] = $prefixTrimmed . '%';
+			}
+		}
+
+		// Add individual group exact matching
+		foreach ($groups as $idx => $group) {
+			$groupTrimmed = cut($group, 200);
+			if ($groupTrimmed !== '') {
+				$placeholder = ":grp{$idx}";
+				$groupConditions[] = "c.group_title = {$placeholder}";
+				$params[$placeholder] = $groupTrimmed;
+			}
+		}
+
+		if (!empty($groupConditions)) {
+			$where[] = '(' . implode(' OR ', $groupConditions) . ')';
+		}
+	}
+
+	// Hide PPV (check both channel name and group)
+	if ($hidePPV) {
+		$where[] = '(c.tvg_name NOT LIKE :ppv1 AND c.group_title NOT LIKE :ppv2)';
+		$params[':ppv1'] = '%PPV%';
+		$params[':ppv2'] = '%PPV%';
+	}
+
+	// Hide 24/7 (check both channel name and group)
+	if ($hide247) {
+		$where[] = '(c.tvg_name NOT LIKE :h247_1 AND c.group_title NOT LIKE :h247_2)';
+		$params[':h247_1'] = '%24/7%';
+		$params[':h247_2'] = '%24/7%';
+	}
+
+	// Exclude channels with no feeds (based on tvg_id)
+	if ($hasJunctionTable) {
+		$where[] = "EXISTS (
+			SELECT 1 
+			FROM channel_feeds cf 
+			JOIN channels c2 ON c2.id = cf.channel_id 
+			WHERE c2.tvg_id = c.tvg_id 
+			AND c2.tvg_id IS NOT NULL 
+			AND c2.tvg_id <> ''
+		)";
+	} else {
+		$where[] = "EXISTS (
+			SELECT 1 
+			FROM feeds f 
+			JOIN channels c2 ON c2.id = f.channel_id 
+			WHERE c2.tvg_id = c.tvg_id 
+			AND c2.tvg_id IS NOT NULL 
+			AND c2.tvg_id <> ''
+		)";
 	}
 
 	$whereSql = $where ? ('WHERE ' . implode(' AND ', $where)) : '';
@@ -108,17 +171,28 @@ try {
 
 	// ----- DATA -----
 	// Build feed count and last_checked subqueries based on schema
+	// FIXED: Count feeds for ALL channels with the same tvg_id, not just the current channel
 	if ($hasJunctionTable) {
-		// New schema: count through junction table
-		$feedCountSql = "(SELECT COUNT(DISTINCT cf.feed_id) FROM channel_feeds cf WHERE cf.channel_id = c.id)";
+		// New schema: count through junction table for all channels with same tvg_id
+		$feedCountSql = "(SELECT COUNT(DISTINCT cf.feed_id) 
+		                  FROM channel_feeds cf 
+		                  JOIN channels c2 ON c2.id = cf.channel_id 
+		                  WHERE c2.tvg_id = c.tvg_id AND c2.tvg_id IS NOT NULL AND c2.tvg_id <> '')";
 		$lastCheckedSql = "(SELECT MAX(f2.last_checked_at) 
 		                     FROM channel_feeds cf2 
 		                     JOIN feeds f2 ON f2.id = cf2.feed_id 
-		                     WHERE cf2.channel_id = c.id)";
+		                     JOIN channels c3 ON c3.id = cf2.channel_id
+		                     WHERE c3.tvg_id = c.tvg_id AND c3.tvg_id IS NOT NULL AND c3.tvg_id <> '')";
 	} else {
-		// Old schema: direct join
-		$feedCountSql = "(SELECT COUNT(*) FROM feeds f WHERE f.channel_id = c.id)";
-		$lastCheckedSql = "(SELECT MAX(last_checked_at) FROM feeds f2 WHERE f2.channel_id = c.id)";
+		// Old schema: direct join for all channels with same tvg_id
+		$feedCountSql = "(SELECT COUNT(*) 
+		                  FROM feeds f 
+		                  JOIN channels c2 ON c2.id = f.channel_id 
+		                  WHERE c2.tvg_id = c.tvg_id AND c2.tvg_id IS NOT NULL AND c2.tvg_id <> '')";
+		$lastCheckedSql = "(SELECT MAX(f2.last_checked_at) 
+		                     FROM feeds f2 
+		                     JOIN channels c3 ON c3.id = f2.channel_id
+		                     WHERE c3.tvg_id = c.tvg_id AND c3.tvg_id IS NOT NULL AND c3.tvg_id <> '')";
 	}
 
 	$sqlData = "
@@ -153,7 +227,7 @@ try {
 
 		$data[] = [
 			'logo' => $logoHtml,
-			'group' => '<a class="text-decoration-none" href="feeds.php?group=' . urlencode($groupTitle) . '">' . h($groupTitle) . '</a>',
+			'group' => '<a class="text-decoration-none" href="#" data-group="' . h($groupTitle) . '">' . h($groupTitle) . '</a>',
 			'name'  => '<a class="text-decoration-none fw-semibold" href="channel.php?id=' . $id . '">' . h((string)$r['tvg_name']) . '</a>',
 			'tvg_id' => h((string)$r['tvg_id']),
 			'feeds'  => (int)$r['feed_count'],

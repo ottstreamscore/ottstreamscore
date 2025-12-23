@@ -161,6 +161,31 @@ try {
 		]);
 	}
 
+	// Handle credential replacement if provided
+	$newUsername = trim((string)($_POST['new_username'] ?? ''));
+	$newPassword = trim((string)($_POST['new_password'] ?? ''));
+
+	if ($newUsername !== '' && $newPassword !== '') {
+		$content = file_get_contents($playlistPath);
+		if ($content === false) {
+			redirect_back([
+				'ok' => false,
+				'message' => 'Unable to read playlist file for credential replacement',
+			]);
+		}
+
+		$pattern = '#(/live/)[^/]+/[^/]+/#';
+		$replacement = '${1}' . $newUsername . '/' . $newPassword . '/';
+		$content = preg_replace($pattern, $replacement, $content);
+
+		if (file_put_contents($playlistPath, $content) === false) {
+			redirect_back([
+				'ok' => false,
+				'message' => 'Unable to write updated credentials to playlist file',
+			]);
+		}
+	}
+
 	$fh = fopen($playlistPath, 'rb');
 	if (!$fh) {
 		redirect_back([
@@ -589,6 +614,14 @@ try {
 	}
 
 	$pdo->commit();
+
+	// Update last_sync_date
+	try {
+		$stmt = $pdo->prepare("INSERT INTO settings (setting_key, setting_value) VALUES ('last_sync_date', NOW()) ON DUPLICATE KEY UPDATE setting_value = NOW()");
+		$stmt->execute();
+	} catch (Throwable $e) {
+		// Non-critical, continue
+	}
 
 	$stats = [
 		'Playlist file' => $playlistBase,

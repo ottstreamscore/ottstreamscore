@@ -1,0 +1,40 @@
+/**
+ * ============================================================================
+ * CUSTOM STYLESHEET
+ * ============================================================================
+ * 
+ * This file is for your personal CSS customizations and overrides.
+ * 
+ * USAGE:
+ * - Add your custom styles below this header
+ * - Changes made here will persist across application updates
+ * - Use !important sparingly and only when necessary to override defaults
+ * 
+ * BEST PRACTICES:
+ * - Keep selectors specific to avoid unintended side effects
+ * - Comment your changes so you remember what they do
+ * - Test in both light and dark themes
+ * - Backup this file before major changes
+ * 
+ * THEME COMPATIBILITY:
+ * - Use CSS variables where possible for theme consistency
+ * - Available variables: --bs-primary, --bs-secondary, --bs-success, etc.
+ * - Dark mode: [data-bs-theme="dark"]
+ * - Light mode: [data-bs-theme="light"]
+ * 
+ * EXAMPLES:
+ * 
+ * Override primary color:
+ * :root {
+ *     --bs-primary: #your-color;
+ * }
+ * 
+ * Custom card styling:
+ * .card {
+ *     border-radius: 12px !important;
+ * }
+ * 
+ * ============================================================================
+ */
+
+/* YOUR CUSTOM STYLES BELOW THIS LINE */

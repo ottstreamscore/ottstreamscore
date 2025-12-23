@@ -28,10 +28,25 @@ if (!function_exists('q')) {
 if (!function_exists('fmt_dt')) {
 	function fmt_dt(?string $dt): string
 	{
-		return $dt ? date('Y-m-d H:i', strtotime($dt)) : '—';
+		if (!$dt || $dt === '0000-00-00 00:00:00') {
+			return '—';
+		}
+
+		$timezone = get_setting('app_timezone', 'America/New_York');
+
+		try {
+			// Parse as UTC (database stores UTC)
+			$utc = new DateTime($dt, new DateTimeZone('UTC'));
+			// Convert to local timezone
+			$utc->setTimezone(new DateTimeZone($timezone));
+			// Format and return
+			return $utc->format('Y-m-d H:i');
+		} catch (Exception $e) {
+			// Fallback if conversion fails
+			return $dt;
+		}
 	}
 }
-
 if (!function_exists('redact_live_url')) {
 	function redact_live_url(string $url): string
 	{

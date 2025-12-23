@@ -34,12 +34,15 @@ try {
 $action = isset($_POST['action']) ? trim((string)$_POST['action']) : (isset($_GET['action']) ? trim((string)$_GET['action']) : '');
 
 switch ($action) {
+
 	case 'add':
 		// Add an ignore
 		$tvgId = isset($_POST['tvg_id']) ? trim((string)$_POST['tvg_id']) : '';
 		$sourceGroup = isset($_POST['source_group']) ? trim((string)$_POST['source_group']) : '';
 		$suggestedGroup = isset($_POST['suggested_group']) ? trim((string)$_POST['suggested_group']) : '';
 		$suggestedFeedId = isset($_POST['suggested_feed_id']) ? (int)$_POST['suggested_feed_id'] : 0;
+		$suggestedTvgName = isset($_POST['suggested_tvg_name']) ? trim((string)$_POST['suggested_tvg_name']) : ''; // NEW
+
 
 		if ($tvgId === '' || $sourceGroup === '' || $suggestedGroup === '' || $suggestedFeedId === 0) {
 			echo json_encode(['error' => 'Missing required parameters']);
@@ -49,15 +52,18 @@ switch ($action) {
 		try {
 			$st = $pdo->prepare("
 				INSERT INTO group_audit_ignores 
-				(tvg_id, source_group, suggested_group, suggested_feed_id)
-				VALUES (:tvg_id, :source_group, :suggested_group, :suggested_feed_id)
-				ON DUPLICATE KEY UPDATE created_at = NOW()
+				(tvg_id, source_group, suggested_group, suggested_feed_id, suggested_tvg_name)
+				VALUES (:tvg_id, :source_group, :suggested_group, :suggested_feed_id, :suggested_tvg_name)
+				ON DUPLICATE KEY UPDATE 
+					created_at = NOW(), 
+					suggested_tvg_name = VALUES(suggested_tvg_name)
 			");
 			$st->execute([
 				':tvg_id' => $tvgId,
 				':source_group' => $sourceGroup,
 				':suggested_group' => $suggestedGroup,
-				':suggested_feed_id' => $suggestedFeedId
+				':suggested_feed_id' => $suggestedFeedId,
+				':suggested_tvg_name' => $suggestedTvgName
 			]);
 			echo json_encode(['success' => true, 'message' => 'Ignore added successfully']);
 		} catch (Throwable $e) {
@@ -73,7 +79,13 @@ switch ($action) {
 			if ($sourceGroup !== '') {
 				$st = $pdo->prepare("
 					SELECT 
-						i.*,
+						i.id,
+						i.tvg_id,
+						i.source_group,
+						i.suggested_group,
+						i.suggested_feed_id,
+						i.suggested_tvg_name,
+						i.created_at,
 						c.tvg_name,
 						c.tvg_logo
 					FROM group_audit_ignores i
@@ -86,7 +98,13 @@ switch ($action) {
 			} else {
 				$st = $pdo->query("
 					SELECT 
-						i.*,
+						i.id,
+						i.tvg_id,
+						i.source_group,
+						i.suggested_group,
+						i.suggested_feed_id,
+						i.suggested_tvg_name,
+						i.created_at,
 						c.tvg_name,
 						c.tvg_logo
 					FROM group_audit_ignores i
@@ -102,6 +120,8 @@ switch ($action) {
 			echo json_encode(['error' => 'Failed to list ignores: ' . $e->getMessage()]);
 		}
 		break;
+
+
 
 	case 'delete':
 		// Delete a specific ignore

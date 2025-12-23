@@ -5,7 +5,12 @@ declare(strict_types=1);
 require_once __DIR__ . '/_boot.php';
 
 // Require authentication
-require_auth();
+if (!is_logged_in()) {
+	header('Content-Type: application/json');
+	http_response_code(401);
+	echo json_encode(['error' => 'Unauthorized']);
+	exit;
+}
 
 $pdo = db();
 header('Content-Type: application/json; charset=utf-8');
@@ -19,7 +24,7 @@ try {
 			$sessionId = session_id();
 			$feedId = (int)($_POST['feed_id'] ?? 0);
 
-			// CRITICAL: Close session to prevent blocking subsequent requests
+			// Close session to prevent blocking subsequent requests
 			session_write_close();
 
 			if ($feedId <= 0) {
