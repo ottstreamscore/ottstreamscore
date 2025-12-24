@@ -99,7 +99,7 @@ if (!$is_cli && $_SERVER['REQUEST_METHOD'] === 'POST') {
 				"INSERT IGNORE INTO `settings` (`setting_key`, `setting_value`, `description`) VALUES 
 		('playlist_url', '', 'URL to hosted M3U playlist'),
 		('last_sync_date', NULL, 'Last successful playlist sync timestamp'),
-		('epg_last_sync_date', NULL, 'Last successful EPG sync timestamp'),', NULL, 'Last successful playlist sync timestamp'),
+		('epg_last_sync_date', NULL, 'Last successful EPG sync timestamp'),
 		('epg_url', '', 'URL to hosted EPG XML file')",
 
 				"CREATE TABLE IF NOT EXISTS `users` (
