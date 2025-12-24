@@ -1,8 +1,8 @@
-# OTT Stream Score v2.0 - Installation & Upgrade Guide
+# OTT Stream Score v2.1 - Installation & Upgrade Guide
 
 ## Overview
 
-Version 2.0 adds EPG integration, task management, group associations for cross-regional discovery, feed comparison tools, and comprehensive playlist optimization workflows. Database changes include EPG tables, task tables, and group association tables. Choose your installation path below based on your situation.
+Version 2.1 adds EPG integration, task management, group associations for cross-regional discovery, feed comparison tools, and comprehensive playlist optimization workflows. Database changes include EPG tables, task tables, and group association tables. Choose your installation path below based on your situation.
 
 ---
 
@@ -142,7 +142,7 @@ tar -czf ottstreamscore_backup_$(date +%F).tar.gz /path/to/your/installation
    
    The migration script will:
    - Verify your installation is v1.3 or later
-   - Create new v2.0 tables (epg_data, group_associations, group_association_prefixes, editor_todo_list, editor_todo_list_log)
+   - Create new v2.1 tables (epg_data, group_associations, group_association_prefixes, editor_todo_list, editor_todo_list_log)
    - Create `/playlists` directory if missing (0700 permissions with protection)
    - Report success or skip if table/directory already exists
 
@@ -181,7 +181,7 @@ The migration script adds:
 **CLI mode:**
 ```
 ======================================================================
-OTT Stream Score - Database Migration (v1.3+ to v2.0)
+OTT Stream Score - Database Migration (v1.3+ to v2.1)
 ======================================================================
 
 ✅ Created epg_data table
@@ -206,7 +206,7 @@ OTT Stream Score - Database Migration (v1.3+ to v2.0)
 
 **For users running versions 1.2 or earlier.**
 
-If you're upgrading from before v1.3, you must first upgrade to v1.3, then upgrade to v2.0.
+If you're upgrading from before v1.3, you must first upgrade to v1.3, then upgrade to v2.1.
 
 ### Why This Matters
 
@@ -248,15 +248,15 @@ Version 1.3 introduced major architectural changes:
 
 5. **Login and verify** settings in Admin Dashboard
 
-**Step 2: Upgrade to v2.0**
+**Step 2: Upgrade to v2.1**
 
 Once you're successfully running v1.3+:
 
-1. **Get v2.0 files:**
+1. **Get v2.1 files:**
 ```bash
    cd /path/to/installation
    git checkout main
-   # or: git checkout v2.0
+   # or: git checkout v2.1
 ```
 
 2. **Run migration:**
@@ -278,7 +278,7 @@ Once you're successfully running v1.3+:
 - Authentication is now required (create admin account)
 - Database credentials move to `.db_bootstrap` file
 
-**From v1.3-v1.5 to v2.0:**
+**From v1.3-v1.5 to v2.1:**
 - Adds EPG integration with automated syncing
 - Adds task management system for collaborative workflows
 - Adds group associations for cross-regional discovery
@@ -362,7 +362,7 @@ Adjust based on your feed count and server capacity.
 - `0 0,12 * * *` - Twice daily at midnight and noon (standard, recommended)
 - `0 0 * * *` - Once daily at midnight (lighter load)
 
-### New v2.0 Features to Explore
+### New v2.1 Features to Explore
 
 **EPG Integration:**
 - View program schedules on channel pages (toggle EPG display)
@@ -642,7 +642,7 @@ Prevents setup from running multiple times.
 
 ## Database Schema
 
-### Version 2.0 Tables
+### Version 2.1 Tables
 
 **Core tables:**
 - `channels` - Channel metadata
@@ -696,7 +696,7 @@ Prevents setup from running multiple times.
 
 ## Version History
 
-**v2.0** (December 2025) - EPG integration, task management, group associations, feed comparison  
+**v2.1** (December 2025) - EPG integration, task management, group associations, feed comparison  
 **v1.5** (December 2025) - Native video player for stream previews  
 **v1.4** (December 2025) - User Management, migration interface  
 **v1.3** (December 2025) - Authentication system, database-driven configuration, admin panel, setup interface  
@@ -708,10 +708,10 @@ Prevents setup from running multiple times.
 
 - **[README.md](README.md)** - Feature overview and quick start
 - **[SECURITY.md](SECURITY.md)** - Security best practices
-- **[RELEASE_NOTES_2.0.md](RELEASE_NOTES_2.0.md)** - Version 2.0 changelog
+- **[RELEASE_NOTES_2.1.md](RELEASE_NOTES_2.1.md)** - Version 2.1 changelog
 
 ---
 
-**Current Version:** 2.0  
+**Current Version:** 2.1  
 **Release Date:** December 2025  
 **Support:** GitHub Issues and Documentation

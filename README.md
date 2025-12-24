@@ -319,6 +319,6 @@ All configuration managed via Admin panel after installation:
 
 ---
 
-**Current Version:** 2.0
+**Current Version:** 2.1
 **Release Date:** December 2025  
-**Previous Version:** 1.5 (December 2025)
+**Previous Version:** 2.0 (December 2025)
