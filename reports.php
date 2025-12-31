@@ -246,7 +246,7 @@ $groups = $pdo->query("
 		// Logo image (right side of header)
 		let logoHtml = '';
 		if (channel.tvg_logo && channel.tvg_logo.trim() !== '') {
-			logoHtml = `<img src="${channel.tvg_logo}" alt="${channel.tvg_name}" style="max-height: 30px; max-width: 100%;" onerror="this.style.display='none'">`;
+			logoHtml = `<img src="${channel.tvg_logo}" alt="${channel.tvg_name}" style="max-height: 30px; max-width: 100px;" onerror="this.style.display='none'">`;
 		}
 
 		let currentFeedHtml = '';

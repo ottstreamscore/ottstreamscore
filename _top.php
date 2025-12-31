@@ -103,3 +103,38 @@ declare(strict_types=1);
 	</nav>
 
 	<main class="container py-4">
+
+		<?php
+
+		// Check for important notifications
+		$stream_host = get_setting('stream_host', '');
+		$playlist_url = get_setting('playlist_url', '');
+		$pause_cron = get_setting('pause_cron', '');
+
+		if ((!$stream_host || !$playlist_url || $pause_cron) && ($currentPage === 'dashboard')) : ?>
+			<div id="notice_holder_top" style="margin-bottom:40pt;">
+
+				<?php if (!$stream_host || !$playlist_url) : ?>
+					<div class="alert alert-danger alert-playlist">
+						<strong><i class="fa-solid fa-triangle-exclamation me-2"></i>Important</strong><br />
+						<ul style="margin-bottom: 0;">
+							<?php if (!$stream_host) : ?>
+								<li>You need to configure your <strong>Stream Host</strong></li>
+							<?php endif; ?>
+							<?php if (!$playlist_url) : ?>
+								<li>You need to configure your <strong>Playlist URL</strong></li>
+							<?php endif; ?>
+						</ul>
+						Please configure these missing settings in <a href="admin.php">Application Settings</a>
+					</div>
+				<?php endif; ?>
+
+				<?php if ($pause_cron) : ?>
+					<div class="alert alert-warning alert-paused">
+						<strong><i class="fa-regular fa-circle-pause me-2"></i>System Paused</strong><br />
+						Automatic feed checking has been paused. To resume checks, please enable it in <a href="admin.php">Application Settings</a>
+					</div>
+				<?php endif; ?>
+
+			</div>
+		<?php endif; ?>

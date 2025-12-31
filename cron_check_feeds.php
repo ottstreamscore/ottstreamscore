@@ -117,6 +117,22 @@ $pdo = db();
 $token = uuidv4();
 
 // ============================================================================
+// CHECK IF CRON IS PAUSED
+// ============================================================================
+
+try {
+	$pauseCron = $pdo->query("SELECT setting_value FROM settings WHERE setting_key = 'pause_cron' LIMIT 1")->fetchColumn();
+
+	if ((int)$pauseCron === 1) {
+		error_log("Feed Check Cron: Skipping - system is paused (pause_cron setting is enabled)");
+		exit(0);
+	}
+} catch (Throwable $e) {
+	// If settings table doesn't exist or query fails, continue normally
+	error_log("Feed Check Cron: Failed to check pause_cron setting: " . $e->getMessage());
+}
+
+// ============================================================================
 // STREAM PREVIEW LOCK CHECK
 // Skip feed checks if a user is actively previewing a stream
 // ============================================================================
@@ -152,7 +168,7 @@ try {
 			substr($lockDetails['locked_by'] ?? 'unknown', 0, 8),
 			$lockDetails['seconds_since_heartbeat'] ?? 0
 		);
-		error_log($message);
+		//	error_log($message);
 		exit(0);
 	}
 } catch (Throwable $e) {

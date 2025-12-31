@@ -430,6 +430,7 @@ try {
 								OR ? LIKE CONCAT('%', SUBSTRING_INDEX(c.tvg_id, '.', 1), '%')
 							)
 							AND c.tvg_id != ?
+							AND c.tvg_id NOT LIKE '%dummy%'
 							GROUP BY f.id, c.group_title, c.tvg_name, c.tvg_id, f.last_ok, f.reliability_score, f.last_w, f.last_h, f.last_fps, f.last_codec
 							HAVING check_count > 0
 							ORDER BY avg_reliability DESC, avg_w DESC, avg_h DESC, avg_fps DESC
@@ -462,6 +463,7 @@ try {
 								OR ? LIKE CONCAT('%', SUBSTRING_INDEX(c.tvg_id, '.', 1), '%')
 							)
 							AND c.tvg_id != ?
+							AND c.tvg_id NOT LIKE '%dummy%'
 							GROUP BY f.id, c.group_title, c.tvg_name, c.tvg_id, f.last_ok, f.reliability_score, f.last_w, f.last_h, f.last_fps, f.last_codec
 							HAVING check_count > 0
 							ORDER BY avg_reliability DESC, avg_w DESC, avg_h DESC, avg_fps DESC

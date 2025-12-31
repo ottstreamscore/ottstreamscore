@@ -114,6 +114,11 @@ $displayGroup = (string)($feed['group_title'] ?? '—');
 $displayLogo = (string)($feed['tvg_logo'] ?? '');
 $displayUrl = (string)($feed['url_display'] ?? $feed['url'] ?? '');
 $tvgId = (string)($feed['tvg_id'] ?? '');
+$catchUp = !empty($feed['catch_up']) ? $feed['catch_up'] : null;
+$catchUpDays = isset($feed['catch_up_days']) ? (int)$feed['catch_up_days'] : null;
+$showCatchUp = !empty($catchUp) && $catchUpDays !== null;
+$colClass = $showCatchUp ? 'col-md-3' : 'col-md-4';
+
 
 // Helper functions
 if (!function_exists('status_badge')) {
@@ -289,7 +294,7 @@ if (!function_exists('res_badge')) {
 
 <!-- Additional Stats -->
 <div class="row g-3 mb-4">
-	<div class="col-md-4">
+	<div class="<?= $colClass ?>">
 		<div class="info-card">
 			<div class="fw-semibold mb-1">Most Common Resolution</div>
 			<div class="h4 mb-0">
@@ -308,18 +313,26 @@ if (!function_exists('res_badge')) {
 			</div>
 		</div>
 	</div>
-	<div class="col-md-4">
+	<div class="<?= $colClass ?>">
 		<div class="info-card">
 			<div class="fw-semibold mb-1">Average FPS</div>
 			<div class="h4 mb-0"><?= $avgFps !== null ? number_format($avgFps, 2) : '—' ?></div>
 		</div>
 	</div>
-	<div class="col-md-4">
+	<div class="<?= $colClass ?>">
 		<div class="info-card">
 			<div class="fw-semibold mb-1">Most Common Codec</div>
 			<div class="h4 mb-0"><?= $mostCommonCodec ? h($mostCommonCodec) : '—' ?></div>
 		</div>
 	</div>
+	<?php if ($showCatchUp): ?>
+		<div class="<?= $colClass ?>">
+			<div class="info-card">
+				<div class="fw-semibold mb-1">Catch-Up</div>
+				<div class="h4 mb-0"><?= number_format($catchUpDays) ?> <?= $catchUpDays === 1 ? 'day' : 'days' ?></div>
+			</div>
+		</div>
+	<?php endif; ?>
 </div>
 
 <!-- Time period selector -->

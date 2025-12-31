@@ -6,6 +6,7 @@ ini_set('display_errors', '0');
 ini_set('log_errors', '1');
 error_reporting(E_ALL);
 
+
 require_once __DIR__ . '/_boot.php';
 
 if (!is_logged_in()) {
@@ -34,6 +35,7 @@ try {
 	$status = ['ok' => 1, 'fail' => 1, 'unknown' => 1];
 	$qual = ['k4' => 0, 'fhd' => 0, 'hd' => 0, 'sd' => 0];
 	$hide = ['ppv' => 0, 't247' => 0];
+	$showCatchupOnly = 0; // Default: show all feeds
 
 	if (isset($_GET['filters']) && is_array($_GET['filters'])) {
 		$filters = $_GET['filters'];
@@ -49,6 +51,9 @@ try {
 		}
 		if (isset($filters['hide']) && is_array($filters['hide'])) {
 			$hide = $filters['hide'];
+		}
+		if (isset($filters['catchup'])) {
+			$showCatchupOnly = (int)$filters['catchup'];
 		}
 	}
 
@@ -176,6 +181,11 @@ try {
 	}
 	if (isset($hide['t247']) && (int)$hide['t247'] === 1) {
 		$where[] = "(c.tvg_name NOT LIKE '%24/7%' AND c.group_title NOT LIKE '%24/7%')";
+	}
+
+	// Catch-up filter
+	if ($showCatchupOnly === 1) {
+		$where[] = "f.catch_up IS NOT NULL";
 	}
 
 	$whereSQL = !empty($where) ? 'WHERE ' . implode(' AND ', $where) : '';

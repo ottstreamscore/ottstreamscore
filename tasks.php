@@ -47,6 +47,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			exit;
 		}
 
+		if ($action === 'edit_note') {
+			$taskId = (int)($_POST['task_id'] ?? 0);
+			$newNote = trim($_POST['note'] ?? '');
+
+			if ($taskId <= 0) {
+				echo json_encode(['success' => false, 'message' => 'Invalid task ID']);
+				exit;
+			}
+
+			if ($newNote === '') {
+				echo json_encode(['success' => false, 'message' => 'Note cannot be empty']);
+				exit;
+			}
+
+			// Update the note
+			$updateStmt = $pdo->prepare("UPDATE editor_todo_list SET note = ? WHERE id = ?");
+			$updateStmt->execute([$newNote, $taskId]);
+
+			echo json_encode([
+				'success' => true,
+				'message' => 'Note updated successfully',
+				'note' => $newNote
+			]);
+			exit;
+		}
+
 		// For task actions, validate task_id
 		$taskId = (int)($_POST['task_id'] ?? 0);
 
@@ -271,6 +297,16 @@ function status_badge(string $status): string
 	return '<span class="badge ' . $class . '">' . h($label) . '</span>';
 }
 
+if (!function_exists('safe_search_text')) {
+	function safe_search_text(string $text): string
+	{
+		// Remove or replace characters that could break HTML attributes
+		$text = strtolower($text);
+		$text = str_replace(['"', "'", '<', '>', '&'], '', $text);
+		return $text;
+	}
+}
+
 ?>
 
 <div class="row g-3">
@@ -454,7 +490,7 @@ function status_badge(string $status): string
 										data-group="<?= h($task['source_group']) ?>"
 										data-creator="<?= h((string)$task['created_by_user']) ?>"
 										data-created="<?= h($task['created_at']) ?>"
-										data-search-text="<?= h(strtolower($task['source_group'] . ' ' . $task['tvg_id'] . ' ' . $curChannelName . ' ' . ($task['note'] ?? ''))) ?>"
+										data-search-text="<?= safe_search_text($task['source_group'] . ' ' . $task['tvg_id'] . ' ' . $curChannelName . ' ' . ($task['note'] ?? '')) ?>"
 										data-todo-id="<?= (int)$task['id'] ?>">
 
 										<!-- Accordion Header (Collapsed View) -->
@@ -465,26 +501,17 @@ function status_badge(string $status): string
 											<div class="task-accordion-summary">
 												<div class="task-synopsis">
 													<!-- Main title line: Note + Badge -->
-													<div class="task-synopsis-title d-flex justify-content-between align-items-start mb-2">
+													<div class="task-synopsis-title d-flex justify-content-between align-items-start">
 														<div class="flex-grow-1">
-															<?php if ($task['note']): ?>
-																<span class="fw-semibold"><?= h(mb_substr($task['note'], 0, 80)) ?><?= mb_strlen($task['note']) > 80 ? '...' : '' ?></span>
-															<?php else: ?>
-																<span class="fw-semibold text-muted">[No note provided]</span>
-															<?php endif; ?>
+															<i class="fa-solid fa-layer-group me-1"></i>
+															<span class="fw-semibold task_title" style="font-size:11pt !important;"><?= h($task['source_group']) ?></span>
+															<span class="mx-2 text-muted">|</span>
+															<i class="fa-solid fa-tv me-1"></i>
+															<span class="fw-semibold task_title" style="font-size:11pt !important;"><?= h($curChannelName) ?></span>
 														</div>
 														<div class="ms-3 flex-shrink-0 task-header-badge">
 															<?= category_badge($task['category']) ?>
 														</div>
-													</div>
-
-													<!-- Group and Channel inline -->
-													<div class="task-synopsis-meta small">
-														<i class="fa-solid fa-layer-group me-1"></i>
-														<span class="text-muted"><?= h($task['source_group']) ?></span>
-														<span class="mx-2 text-muted">|</span>
-														<i class="fa-solid fa-tv me-1"></i>
-														<span class="fw-semibold"><?= h($curChannelName) ?></span>
 													</div>
 												</div>
 											</div>
@@ -647,6 +674,9 @@ function status_badge(string $status): string
 													<i class="fa-solid fa-calendar-event"></i> <?= fmt_dt($task['created_at']) ?>
 												</div>
 												<div class="d-flex gap-2">
+													<button class="btn btn-primary btn-sm btn-edit-task" data-task-id="<?= (int)$task['id'] ?>">
+														<i class="fa-solid fa-pen-to-square"></i> Edit Note
+													</button>
 													<button class="btn btn-success btn-sm btn-complete-task" data-task-id="<?= (int)$task['id'] ?>">
 														<i class="fa-solid fa-check-circle"></i> Mark Complete
 													</button>
@@ -736,6 +766,33 @@ function status_badge(string $status): string
 						</div>
 					</div>
 				</div>
+			</div>
+		</div>
+	</div>
+</div>
+
+<!-- Edit Note Modal -->
+<div class="modal fade" id="editNoteModal" tabindex="-1" aria-labelledby="editNoteModalLabel" aria-hidden="true">
+	<div class="modal-dialog">
+		<div class="modal-content">
+			<div class="modal-header">
+				<h5 class="modal-title" id="editNoteModalLabel">
+					<i class="fa-solid fa-pen-to-square me-2"></i>Edit Task Note
+				</h5>
+				<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+			</div>
+			<div class="modal-body">
+				<div class="mb-3">
+					<label for="editNoteTextarea" class="form-label">Note</label>
+					<textarea class="form-control" id="editNoteTextarea" rows="5" placeholder="Enter task note..."></textarea>
+					<div class="form-text">Note is required and supports line breaks.</div>
+				</div>
+			</div>
+			<div class="modal-footer">
+				<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+				<button type="button" class="btn btn-primary" id="saveNoteBtn">
+					<i class="fa-solid fa-save me-1"></i>Save Note
+				</button>
 			</div>
 		</div>
 	</div>
@@ -850,6 +907,75 @@ function status_badge(string $status): string
 				$container.find('.alert-info').remove();
 			}
 		}
+
+		// Edit task note
+		$(document).on('click', '.btn-edit-task', function() {
+			const taskId = $(this).data('task-id');
+			const $card = $(this).closest('.task-card');
+
+			// Get the current note from the card
+			const $noteSection = $card.find('.task-accordion-body p.fst-italic');
+			const currentNote = $noteSection.length > 0 ? $noteSection.text().trim() : '';
+
+			// Store task ID in modal for later
+			$('#editNoteModal').data('task-id', taskId);
+			$('#editNoteModal').data('card', $card);
+
+			// Populate textarea with current note
+			$('#editNoteTextarea').val(currentNote);
+
+			// Show modal
+			const modal = new bootstrap.Modal($('#editNoteModal')[0]);
+			modal.show();
+		});
+
+		// Save note button handler
+		$('#saveNoteBtn').on('click', function() {
+			const taskId = $('#editNoteModal').data('task-id');
+			const $card = $('#editNoteModal').data('card');
+			const newNote = $('#editNoteTextarea').val().trim();
+
+			if (newNote === '') {
+				alert('Note cannot be empty');
+				return;
+			}
+
+			// Disable button during save
+			$(this).prop('disabled', true).html('<i class="fa-solid fa-spinner fa-spin me-1"></i>Saving...');
+
+			$.post('tasks.php', {
+				action: 'edit_note',
+				task_id: taskId,
+				note: newNote
+			}, function(response) {
+				if (response.success) {
+					// Update the note in the DOM
+					const $noteSection = $card.find('.task-accordion-body').find('p.fst-italic');
+					$noteSection.text(response.note);
+
+					// Update search text attribute (strip special chars)
+					const currentSearchText = $card.data('search-text');
+					const searchTextParts = currentSearchText.split(' ');
+					// Remove old note from search text and add new one
+					const group = $card.data('group').toLowerCase();
+					const category = $card.data('category').toLowerCase();
+					const newSearchText = (group + ' ' + response.note).toLowerCase().replace(/['"<>&]/g, '');
+					$card.attr('data-search-text', newSearchText);
+
+					// Close modal
+					bootstrap.Modal.getInstance($('#editNoteModal')[0]).hide();
+
+					// Reset button
+					$('#saveNoteBtn').prop('disabled', false).html('<i class="fa-solid fa-save me-1"></i>Save Note');
+				} else {
+					alert('Error: ' + response.message);
+					$('#saveNoteBtn').prop('disabled', false).html('<i class="fa-solid fa-save me-1"></i>Save Note');
+				}
+			}, 'json').fail(function() {
+				alert('Failed to update note. Please try again.');
+				$('#saveNoteBtn').prop('disabled', false).html('<i class="fa-solid fa-save me-1"></i>Save Note');
+			});
+		});
 
 		// Sort functionality
 		function sortTasks() {
