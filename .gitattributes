@@ -1,0 +1,4 @@
+LICENSE merge=ours
+CODE_OF_CONDUCT.md merge=ours
+CONTRIBUTING.MD merge=ours
+.github/** merge=ours
