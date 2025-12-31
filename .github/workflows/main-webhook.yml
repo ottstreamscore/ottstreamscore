@@ -11,7 +11,7 @@ jobs:
       - name: Send signed webhook (GitHub-compatible)
         env:
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
-          WEBHOOK_SECRET: ${{ secrets.GITHUB_WEBHOOK_SECRET }}
+          WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
         run: |
           payload='{"after":"${{ github.sha }}","ref":"${{ github.ref }}","pusher":{"name":"github-actions"}}'
 
