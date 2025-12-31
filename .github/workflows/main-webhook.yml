@@ -8,14 +8,14 @@ jobs:
   notify:
     runs-on: ubuntu-latest
     steps:
-      - name: Send signed webhook (GitHub-compatible)
+      - name: Send real GitHub push payload
         env:
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
           WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
         run: |
-          payload="{\"after\":\"${{ github.sha }}\",\"ref\":\"${{ github.ref }}\",\"pusher\":{\"name\":\"github-actions\"}}"
+          payload="$(cat "$GITHUB_EVENT_PATH")"
 
-          signature=$(echo -n "$payload" | \
+          signature=$(printf '%s' "$payload" | \
             openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" | \
             sed 's/^.* //')
 
