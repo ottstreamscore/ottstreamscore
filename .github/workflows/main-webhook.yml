@@ -13,7 +13,7 @@ jobs:
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
           WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
         run: |
-          payload='{"after":"${{ github.sha }}","ref":"${{ github.ref }}","pusher":{"name":"github-actions"}}'
+          payload="{\"after\":\"${{ github.sha }}\",\"ref\":\"${{ github.ref }}\",\"pusher\":{\"name\":\"github-actions\"}}"
 
           signature=$(echo -n "$payload" | \
             openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" | \
