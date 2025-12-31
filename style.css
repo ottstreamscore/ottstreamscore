@@ -121,7 +121,7 @@ CSS VARIABLES
 		display: none;
 	}
 
-	div#feedsTable_wrapper {
+	div#feedsTable_wrapper, div#channelsTable_wrapper {
 		padding: 10pt;
 	}
 
@@ -975,6 +975,25 @@ CSS VARIABLES
 		color: #ffc107;
 	}
 
+
+	.sidebar-link.delete-link {
+		background: rgba(220, 53, 69, 0.1);
+		border: 1px solid rgba(220, 53, 69, 0.3);
+		color: #dc3545;
+		font-weight: 500;
+	}
+
+	.sidebar-link.delete-link:hover {
+		background: rgba(220, 53, 69, 0.15);
+		border-color: rgba(220, 53, 69, 0.5);
+	}
+
+	.sidebar-link.delete-link.active {
+	   background: rgba(220, 53, 69, 0.2);
+		border-color: #dc3545;
+		color: #dc3545;
+	}
+
 	[data-bs-theme="dark"] .sidebar-link.password-link {
 		background: rgba(255, 193, 7, 0.15);
 		border-color: rgba(255, 193, 7, 0.3);
@@ -987,7 +1006,31 @@ CSS VARIABLES
 		box-shadow: 0 2px 4px var(--shadow);
 		padding: 30px;
 	}
-	
+
+	.form-check-input {
+		width: 20px;
+		height: 20px;
+		margin-top: 0;
+		cursor: pointer;
+		background-color: var(--bg-card);
+		border: 2px solid var(--border-color);
+	}
+
+	.form-check-input:checked {
+		background-color: #dc3545;
+		border-color: #dc3545;
+	}
+
+	.form-check-label {
+		cursor: pointer;
+		margin-left: 10px;
+	}
+
+	.form-check {
+		display: flex;
+		align-items: flex-start;
+	}
+		
 
 	/* ============================================================================
 	CHANNEL

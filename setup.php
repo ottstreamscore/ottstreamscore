@@ -1,10 +1,16 @@
 <?php
 
 /**
- * setup.php
- * One-time setup script for OTT Stream Score
- * Works in both CLI and web browser
- * v1.5
+ * OTT Stream Score - Initial Installation Wizard
+ * 
+ * Creates database tables, admin user, and system configuration.
+ * Run once per installation. Delete after completion.
+ * 
+ * @version 2.2
+ * @link https://ottstreamscore.com
+ * @license MIT License
+ * 
+ * Usage: Access via browser at /setup.php or run via CLI: php setup.php
  */
 
 declare(strict_types=1);
@@ -20,22 +26,259 @@ if (file_exists(__DIR__ . '/.installed')) {
 		echo "========================================\n\n";
 		echo "OTT Stream Score is already set up.\n";
 		echo "To reconfigure, delete the .installed file and run setup.php again.\n";
+		echo "If you are upgrading an existing installation. run migrate.php.\n";
 	} else {
 		echo "<!DOCTYPE html><html><head><title>Already Installed</title></head><body>";
 		echo "<h1>Already Installed</h1>";
 		echo "<p>OTT Stream Score is already set up.</p>";
 		echo "<p>To reconfigure, delete the .installed file and run setup.php again.</p>";
+		echo "<p>If you are upgrading an existing installation. run migrate.php.</p>";
 		echo "</body></html>";
 	}
 	exit(0);
 }
 
+function getTableDefinitions()
+{
+	return [
+
+		"CREATE TABLE IF NOT EXISTS `settings` (
+			`id` INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+			`setting_key` VARCHAR(100) NOT NULL UNIQUE,
+			`setting_value` TEXT,
+			`description` VARCHAR(255),
+			`updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+			INDEX `idx_key` (`setting_key`)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+		"INSERT IGNORE INTO `settings` (`setting_key`, `setting_value`, `description`) VALUES 
+			('playlist_url', '', 'URL to hosted M3U playlist'),
+			('last_sync_date', NULL, 'Last successful playlist sync timestamp'),
+			('epg_last_sync_date', NULL, 'Last successful EPG sync timestamp'),
+			('epg_url', '', 'URL to hosted EPG XML file'),
+			('managed_hosting', NULL, 'Managed hosting configuration setting'),
+			('pause_cron', NULL, 'Pause cron job execution')",
+
+		"CREATE TABLE IF NOT EXISTS `users` (
+			`id` INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+			`username` VARCHAR(50) NOT NULL UNIQUE,
+			`password_hash` VARCHAR(255) NOT NULL,
+			`email` VARCHAR(100),
+			`is_active` TINYINT(1) DEFAULT 1,
+			`created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+			`last_login` DATETIME NULL,
+			INDEX `idx_username` (`username`)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+		"CREATE TABLE IF NOT EXISTS `epg_data` (
+			`id` INT AUTO_INCREMENT PRIMARY KEY,
+			`tvg_id` VARCHAR(255) NOT NULL,
+			`start_timestamp` DATETIME NOT NULL,
+			`end_timestamp` DATETIME NOT NULL,
+			`title` VARCHAR(500) NOT NULL,
+			`description` TEXT,
+			INDEX `idx_tvg_id` (`tvg_id`),
+			INDEX `idx_start_time` (`start_timestamp`),
+			INDEX `idx_tvg_start` (`tvg_id`, `start_timestamp`)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+		"CREATE TABLE IF NOT EXISTS `login_attempts` (
+			`id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+			`ip_address` VARCHAR(45) NOT NULL,
+			`username` VARCHAR(50) NOT NULL,
+			`attempted_at` DATETIME NOT NULL,
+			`success` TINYINT(1) NOT NULL DEFAULT 0,
+			INDEX `idx_ip_time` (`ip_address`, `attempted_at`),
+			INDEX `idx_username_time` (`username`, `attempted_at`),
+			INDEX `idx_attempted_at` (`attempted_at`)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+		"CREATE TABLE IF NOT EXISTS `channels` (
+			`id` BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+			`tvg_id` VARCHAR(191) NOT NULL,
+			`tvg_name` VARCHAR(255) NOT NULL,
+			`tvg_logo` TEXT DEFAULT NULL,
+			`group_title` VARCHAR(255) NOT NULL,
+			`created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			`updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+			PRIMARY KEY (`id`),
+			UNIQUE KEY `uniq_channel` (`tvg_id`, `group_title`),
+			KEY `idx_name` (`tvg_name`),
+			KEY `idx_group` (`group_title`),
+			KEY `idx_channels_tvgid` (`tvg_id`)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
+
+		"CREATE TABLE IF NOT EXISTS `channel_feeds` (
+			`channel_id` BIGINT(20) UNSIGNED NOT NULL,
+			`feed_id` BIGINT(20) UNSIGNED NOT NULL,
+			`created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			`last_seen` TIMESTAMP NULL DEFAULT NULL,
+			PRIMARY KEY (`channel_id`, `feed_id`),
+			KEY `idx_feed_id` (`feed_id`),
+			KEY `idx_channel_id` (`channel_id`)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
+
+		"CREATE TABLE IF NOT EXISTS `feeds` (
+			`id` BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+			`channel_id` BIGINT(20) UNSIGNED NOT NULL,
+			`url` TEXT NOT NULL,
+			`url_display` TEXT DEFAULT NULL,
+			`url_hash` CHAR(40) NOT NULL,
+			`catch_up` VARCHAR(50) NULL DEFAULT NULL,
+			`catch_up_days` VARCHAR(10) NULL DEFAULT NULL,
+			`is_live` TINYINT(1) NOT NULL DEFAULT 1,
+			`created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			`updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+			`last_checked_at` DATETIME DEFAULT NULL,
+			`last_ok` TINYINT(1) DEFAULT NULL,
+			`last_codec` VARCHAR(32) DEFAULT NULL,
+			`last_w` INT(11) DEFAULT NULL,
+			`last_h` INT(11) DEFAULT NULL,
+			`last_fps` DECIMAL(6,2) DEFAULT NULL,
+			`last_error` VARCHAR(255) DEFAULT NULL,
+			`reliability_score` DECIMAL(6,2) NOT NULL DEFAULT 0.00,
+			`quality_score` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+			`last_seen` TIMESTAMP NULL DEFAULT NULL,
+			PRIMARY KEY (`id`),
+			UNIQUE KEY `uniq_url_hash` (`url_hash`),
+			KEY `idx_channel` (`channel_id`),
+			KEY `idx_last_ok` (`last_ok`),
+			KEY `idx_quality` (`quality_score`),
+			KEY `idx_feeds_channel` (`channel_id`),
+			CONSTRAINT `fk_feeds_channel` FOREIGN KEY (`channel_id`) REFERENCES `channels` (`id`) ON DELETE CASCADE
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
+
+		"CREATE TABLE IF NOT EXISTS `feed_checks` (
+			`id` BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+			`feed_id` BIGINT(20) UNSIGNED NOT NULL,
+			`checked_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			`ok` TINYINT(1) NOT NULL,
+			`codec` VARCHAR(32) DEFAULT NULL,
+			`w` INT(11) DEFAULT NULL,
+			`h` INT(11) DEFAULT NULL,
+			`fps` DECIMAL(6,2) DEFAULT NULL,
+			`error` TEXT DEFAULT NULL,
+			`raw_json` MEDIUMTEXT DEFAULT NULL,
+			PRIMARY KEY (`id`),
+			KEY `idx_feed_time` (`feed_id`, `checked_at`),
+			KEY `idx_time` (`checked_at`),
+			KEY `idx_feed_checks_feed_time` (`feed_id`, `checked_at`),
+			CONSTRAINT `fk_checks_feed` FOREIGN KEY (`feed_id`) REFERENCES `feeds` (`id`) ON DELETE CASCADE
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
+
+		"CREATE TABLE IF NOT EXISTS `feed_check_queue` (
+			`feed_id` BIGINT(20) UNSIGNED NOT NULL,
+			`next_run_at` DATETIME NOT NULL,
+			`locked_at` DATETIME DEFAULT NULL,
+			`lock_token` CHAR(36) DEFAULT NULL,
+			`attempts` INT(11) NOT NULL DEFAULT 0,
+			`last_result_ok` TINYINT(1) DEFAULT NULL,
+			`last_error` VARCHAR(255) DEFAULT NULL,
+			`updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+			PRIMARY KEY (`feed_id`),
+			KEY `idx_next` (`next_run_at`),
+			KEY `idx_lock` (`locked_at`),
+			KEY `idx_queue_next` (`next_run_at`),
+			KEY `idx_queue_locked` (`locked_at`),
+			CONSTRAINT `fk_queue_feed` FOREIGN KEY (`feed_id`) REFERENCES `feeds` (`id`) ON DELETE CASCADE
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
+
+		"CREATE TABLE IF NOT EXISTS `group_audit_ignores` (
+			`id` INT AUTO_INCREMENT PRIMARY KEY,
+			`tvg_id` VARCHAR(255) NOT NULL,
+			`source_group` VARCHAR(255) NOT NULL,
+			`suggested_group` VARCHAR(255) NOT NULL,
+			`suggested_feed_id` BIGINT(20) UNSIGNED NOT NULL,
+			`suggested_tvg_name` VARCHAR(255) DEFAULT NULL,
+			`created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE KEY `unique_ignore` (`tvg_id`, `source_group`, `suggested_feed_id`),
+			INDEX `idx_tvg_source` (`tvg_id`, `source_group`)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
+
+		"CREATE TABLE IF NOT EXISTS `group_associations` (
+			`id` INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+			`name` VARCHAR(100) NOT NULL,
+			`created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+			`updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+			INDEX `idx_name` (`name`)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+		"CREATE TABLE IF NOT EXISTS `group_association_prefixes` (
+			`id` INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+			`association_id` INT UNSIGNED NOT NULL,
+			`prefix` VARCHAR(20) NOT NULL,
+			`created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE KEY `unique_association_prefix` (`association_id`, `prefix`),
+			INDEX `idx_prefix` (`prefix`),
+			INDEX `idx_association_id` (`association_id`),
+			CONSTRAINT `fk_assoc_prefix_assoc` FOREIGN KEY (`association_id`) REFERENCES `group_associations` (`id`) ON DELETE CASCADE
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+		"CREATE TABLE IF NOT EXISTS `feed_id_mapping` (
+			`old_feed_id` BIGINT(20) UNSIGNED NOT NULL,
+			`url_hash` VARCHAR(40) NOT NULL,
+			`url` TEXT NOT NULL,
+			PRIMARY KEY (`old_feed_id`),
+			KEY `idx_url_hash` (`url_hash`)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
+
+		"CREATE TABLE IF NOT EXISTS `stream_preview_lock` (
+			`id` INT(11) NOT NULL AUTO_INCREMENT,
+			`locked_by` VARCHAR(100) NOT NULL COMMENT 'Session ID of the user previewing',
+			`locked_at` DATETIME NOT NULL COMMENT 'When the lock was acquired',
+			`last_heartbeat` DATETIME NOT NULL COMMENT 'Last heartbeat timestamp',
+			`feed_id` INT(11) NOT NULL COMMENT 'Feed ID being previewed',
+			`channel_name` VARCHAR(255) DEFAULT NULL COMMENT 'Channel name for reference',
+			PRIMARY KEY (`id`),
+			UNIQUE KEY `single_lock` (`id`),
+			KEY `idx_heartbeat` (`last_heartbeat`),
+			KEY `idx_session` (`locked_by`)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+		"CREATE TABLE IF NOT EXISTS `editor_todo_list` (
+			`id` INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+			`tvg_id` VARCHAR(255) NOT NULL,
+			`source_group` VARCHAR(255) NOT NULL,
+			`suggested_group` VARCHAR(255) NOT NULL,
+			`suggested_feed_id` BIGINT(20) UNSIGNED NOT NULL,
+			`created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			`created_by_user` INT UNSIGNED NOT NULL,
+			`category` ENUM('feed_replacement','feed_review','epg_adjustment','other') NOT NULL,
+			`note` TEXT DEFAULT NULL,
+			INDEX `idx_tvg_source` (`tvg_id`, `source_group`),
+			INDEX `idx_category` (`category`),
+			INDEX `idx_created_by` (`created_by_user`)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
+
+		"CREATE TABLE IF NOT EXISTS `editor_todo_list_log` (
+			`id` INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+			`original_todo_id` INT UNSIGNED NOT NULL,
+			`tvg_id` VARCHAR(255) NOT NULL,
+			`source_group` VARCHAR(255) NOT NULL,
+			`suggested_group` VARCHAR(255) NOT NULL,
+			`suggested_feed_id` BIGINT(20) UNSIGNED NOT NULL,
+			`created_at` TIMESTAMP NOT NULL,
+			`created_by_user` INT UNSIGNED NOT NULL,
+			`category` ENUM('feed_replacement','feed_review','epg_adjustment','other') NOT NULL,
+			`note` TEXT DEFAULT NULL,
+			`completed_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			`completed_by_user` INT UNSIGNED NOT NULL,
+			`completion_status` ENUM('completed','deleted') NOT NULL,
+			INDEX `idx_original_todo` (`original_todo_id`),
+			INDEX `idx_tvg_source` (`tvg_id`, `source_group`),
+			INDEX `idx_category` (`category`),
+			INDEX `idx_completion_status` (`completion_status`)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
+	];
+}
 // Handle POST request (web form submission)
 if (!$is_cli && $_SERVER['REQUEST_METHOD'] === 'POST') {
+
 	// Process the form
 	$step = $_POST['step'] ?? 'env';
 
 	if ($step === 'complete') {
+
 		// Run the installation
 		try {
 			$db_host = $_POST['db_host'];
@@ -43,7 +286,6 @@ if (!$is_cli && $_SERVER['REQUEST_METHOD'] === 'POST') {
 			$db_name = $_POST['db_name'];
 			$db_user = $_POST['db_user'];
 			$db_pass = $_POST['db_pass'];
-			$stream_host = $_POST['stream_host'];
 			$app_timezone = $_POST['app_timezone'] ?? 'America/New_York';
 			$batch_size = $_POST['batch_size'] ?? '50';
 			$lock_minutes = $_POST['lock_minutes'] ?? '10';
@@ -56,29 +298,20 @@ if (!$is_cli && $_SERVER['REQUEST_METHOD'] === 'POST') {
 			$admin_email = $_POST['admin_email'] ?? '';
 
 			// Validate required fields
-			$stream_host_trimmed = trim($stream_host);
+
 			if (
 				empty($db_host) || empty($db_name) || empty($db_user) ||
-				empty($stream_host_trimmed) || $stream_host_trimmed === 'http://' || $stream_host_trimmed === 'https://' ||
 				empty($admin_username) || empty($admin_password)
 			) {
 				throw new Exception("All required fields must be filled out. Stream Host cannot be just 'http://' - please provide a complete URL.");
 			}
 
-			// Validate password length
 			if (strlen($admin_password) < 8) {
 				throw new Exception("Password must be at least 8 characters long.");
 			}
 
-			// Validate password confirmation
 			if ($admin_password !== $admin_password_confirm) {
 				throw new Exception("Passwords do not match. Please try again.");
-			}
-
-			// Validate stream_host format
-			$stream_host = rtrim($stream_host, '/'); // Remove trailing slash if present
-			if (!filter_var($stream_host, FILTER_VALIDATE_URL) && !preg_match('/^https?:\/\/.+/', $stream_host)) {
-				throw new Exception("Stream Host must be a valid URL (e.g., http://example.com)");
 			}
 
 			// Test database connection
@@ -86,232 +319,7 @@ if (!$is_cli && $_SERVER['REQUEST_METHOD'] === 'POST') {
 			$pdo = new PDO($dsn, $db_user, $db_pass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
 
 			// Create tables
-			$tables = [
-				"CREATE TABLE IF NOT EXISTS `settings` (
-			`id` INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-			`setting_key` VARCHAR(100) NOT NULL UNIQUE,
-			`setting_value` TEXT,
-			`description` VARCHAR(255),
-			`updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-			INDEX `idx_key` (`setting_key`)
-		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
-
-				"INSERT IGNORE INTO `settings` (`setting_key`, `setting_value`, `description`) VALUES 
-		('playlist_url', '', 'URL to hosted M3U playlist'),
-		('last_sync_date', NULL, 'Last successful playlist sync timestamp'),
-		('epg_last_sync_date', NULL, 'Last successful EPG sync timestamp'),
-		('epg_url', '', 'URL to hosted EPG XML file')",
-
-				"CREATE TABLE IF NOT EXISTS `users` (
-        `id` INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-        `username` VARCHAR(50) NOT NULL UNIQUE,
-        `password_hash` VARCHAR(255) NOT NULL,
-        `email` VARCHAR(100),
-        `is_active` TINYINT(1) DEFAULT 1,
-        `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
-        `last_login` DATETIME NULL,
-        INDEX `idx_username` (`username`)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
-
-				"CREATE TABLE IF NOT EXISTS `epg_data` (
-        `id` INT AUTO_INCREMENT PRIMARY KEY,
-        `tvg_id` VARCHAR(255) NOT NULL,
-        `start_timestamp` DATETIME NOT NULL,
-        `end_timestamp` DATETIME NOT NULL,
-        `title` VARCHAR(500) NOT NULL,
-        `description` TEXT,
-        INDEX `idx_tvg_id` (`tvg_id`),
-        INDEX `idx_start_time` (`start_timestamp`),
-        INDEX `idx_tvg_start` (`tvg_id`, `start_timestamp`)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
-
-				"CREATE TABLE IF NOT EXISTS `login_attempts` (
-        `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-        `ip_address` VARCHAR(45) NOT NULL,
-        `username` VARCHAR(50) NOT NULL,
-        `attempted_at` DATETIME NOT NULL,
-        `success` TINYINT(1) NOT NULL DEFAULT 0,
-        INDEX `idx_ip_time` (`ip_address`, `attempted_at`),
-        INDEX `idx_username_time` (`username`, `attempted_at`),
-        INDEX `idx_attempted_at` (`attempted_at`)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
-
-				"CREATE TABLE IF NOT EXISTS `channels` (
-        `id` BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
-        `tvg_id` VARCHAR(191) NOT NULL,
-        `tvg_name` VARCHAR(255) NOT NULL,
-        `tvg_logo` TEXT DEFAULT NULL,
-        `group_title` VARCHAR(255) NOT NULL,
-        `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        PRIMARY KEY (`id`),
-        UNIQUE KEY `uniq_channel` (`tvg_id`, `group_title`),
-        KEY `idx_name` (`tvg_name`),
-        KEY `idx_group` (`group_title`),
-        KEY `idx_channels_tvgid` (`tvg_id`)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-
-				"CREATE TABLE IF NOT EXISTS `channel_feeds` (
-        `channel_id` BIGINT(20) UNSIGNED NOT NULL,
-        `feed_id` BIGINT(20) UNSIGNED NOT NULL,
-        `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        `last_seen` TIMESTAMP NULL DEFAULT NULL,
-        PRIMARY KEY (`channel_id`, `feed_id`),
-        KEY `idx_feed_id` (`feed_id`),
-        KEY `idx_channel_id` (`channel_id`)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-
-				"CREATE TABLE IF NOT EXISTS `feeds` (
-        `id` BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
-        `channel_id` BIGINT(20) UNSIGNED NOT NULL,
-        `url` TEXT NOT NULL,
-        `url_display` TEXT DEFAULT NULL,
-        `url_hash` CHAR(40) NOT NULL,
-        `is_live` TINYINT(1) NOT NULL DEFAULT 1,
-        `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        `last_checked_at` DATETIME DEFAULT NULL,
-        `last_ok` TINYINT(1) DEFAULT NULL,
-        `last_codec` VARCHAR(32) DEFAULT NULL,
-        `last_w` INT(11) DEFAULT NULL,
-        `last_h` INT(11) DEFAULT NULL,
-        `last_fps` DECIMAL(6,2) DEFAULT NULL,
-        `last_error` VARCHAR(255) DEFAULT NULL,
-        `reliability_score` DECIMAL(6,2) NOT NULL DEFAULT 0.00,
-        `quality_score` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
-        `last_seen` TIMESTAMP NULL DEFAULT NULL,
-        PRIMARY KEY (`id`),
-        UNIQUE KEY `uniq_url_hash` (`url_hash`),
-        KEY `idx_channel` (`channel_id`),
-        KEY `idx_last_ok` (`last_ok`),
-        KEY `idx_quality` (`quality_score`),
-        KEY `idx_feeds_channel` (`channel_id`),
-        CONSTRAINT `fk_feeds_channel` FOREIGN KEY (`channel_id`) REFERENCES `channels` (`id`) ON DELETE CASCADE
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-
-				"CREATE TABLE IF NOT EXISTS `feed_checks` (
-        `id` BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
-        `feed_id` BIGINT(20) UNSIGNED NOT NULL,
-        `checked_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        `ok` TINYINT(1) NOT NULL,
-        `codec` VARCHAR(32) DEFAULT NULL,
-        `w` INT(11) DEFAULT NULL,
-        `h` INT(11) DEFAULT NULL,
-        `fps` DECIMAL(6,2) DEFAULT NULL,
-        `error` TEXT DEFAULT NULL,
-        `raw_json` MEDIUMTEXT DEFAULT NULL,
-        PRIMARY KEY (`id`),
-        KEY `idx_feed_time` (`feed_id`, `checked_at`),
-        KEY `idx_time` (`checked_at`),
-        KEY `idx_feed_checks_feed_time` (`feed_id`, `checked_at`),
-        CONSTRAINT `fk_checks_feed` FOREIGN KEY (`feed_id`) REFERENCES `feeds` (`id`) ON DELETE CASCADE
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-
-				"CREATE TABLE IF NOT EXISTS `feed_check_queue` (
-        `feed_id` BIGINT(20) UNSIGNED NOT NULL,
-        `next_run_at` DATETIME NOT NULL,
-        `locked_at` DATETIME DEFAULT NULL,
-        `lock_token` CHAR(36) DEFAULT NULL,
-        `attempts` INT(11) NOT NULL DEFAULT 0,
-        `last_result_ok` TINYINT(1) DEFAULT NULL,
-        `last_error` VARCHAR(255) DEFAULT NULL,
-        `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        PRIMARY KEY (`feed_id`),
-        KEY `idx_next` (`next_run_at`),
-        KEY `idx_lock` (`locked_at`),
-        KEY `idx_queue_next` (`next_run_at`),
-        KEY `idx_queue_locked` (`locked_at`),
-        CONSTRAINT `fk_queue_feed` FOREIGN KEY (`feed_id`) REFERENCES `feeds` (`id`) ON DELETE CASCADE
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-
-				"CREATE TABLE IF NOT EXISTS `group_audit_ignores` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `tvg_id` VARCHAR(255) NOT NULL,
-    `source_group` VARCHAR(255) NOT NULL,
-    `suggested_group` VARCHAR(255) NOT NULL,
-    `suggested_feed_id` BIGINT(20) UNSIGNED NOT NULL,
-    `suggested_tvg_name` VARCHAR(255) DEFAULT NULL,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY `unique_ignore` (`tvg_id`, `source_group`, `suggested_feed_id`),
-    INDEX `idx_tvg_source` (`tvg_id`, `source_group`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-
-				"CREATE TABLE IF NOT EXISTS `group_associations` (
-        `id` INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-        `name` VARCHAR(100) NOT NULL,
-        `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
-        `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        INDEX `idx_name` (`name`)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
-
-				"CREATE TABLE IF NOT EXISTS `group_association_prefixes` (
-        `id` INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-        `association_id` INT UNSIGNED NOT NULL,
-        `prefix` VARCHAR(20) NOT NULL,
-        `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE KEY `unique_association_prefix` (`association_id`, `prefix`),
-        INDEX `idx_prefix` (`prefix`),
-        INDEX `idx_association_id` (`association_id`),
-        CONSTRAINT `fk_assoc_prefix_assoc` FOREIGN KEY (`association_id`) REFERENCES `group_associations` (`id`) ON DELETE CASCADE
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
-
-				"CREATE TABLE IF NOT EXISTS `feed_id_mapping` (
-        `old_feed_id` BIGINT(20) UNSIGNED NOT NULL,
-        `url_hash` VARCHAR(40) NOT NULL,
-        `url` TEXT NOT NULL,
-        PRIMARY KEY (`old_feed_id`),
-        KEY `idx_url_hash` (`url_hash`)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-
-				"CREATE TABLE IF NOT EXISTS `stream_preview_lock` (
-        `id` INT(11) NOT NULL AUTO_INCREMENT,
-        `locked_by` VARCHAR(100) NOT NULL COMMENT 'Session ID of the user previewing',
-        `locked_at` DATETIME NOT NULL COMMENT 'When the lock was acquired',
-        `last_heartbeat` DATETIME NOT NULL COMMENT 'Last heartbeat timestamp',
-        `feed_id` INT(11) NOT NULL COMMENT 'Feed ID being previewed',
-        `channel_name` VARCHAR(255) DEFAULT NULL COMMENT 'Channel name for reference',
-        PRIMARY KEY (`id`),
-        UNIQUE KEY `single_lock` (`id`),
-        KEY `idx_heartbeat` (`last_heartbeat`),
-        KEY `idx_session` (`locked_by`)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
-
-				"CREATE TABLE IF NOT EXISTS `editor_todo_list` (
-        `id` INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-        `tvg_id` VARCHAR(255) NOT NULL,
-        `source_group` VARCHAR(255) NOT NULL,
-        `suggested_group` VARCHAR(255) NOT NULL,
-        `suggested_feed_id` BIGINT(20) UNSIGNED NOT NULL,
-        `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        `created_by_user` INT UNSIGNED NOT NULL,
-        `category` ENUM('feed_replacement','feed_review','epg_adjustment','other') NOT NULL,
-        `note` TEXT DEFAULT NULL,
-        INDEX `idx_tvg_source` (`tvg_id`, `source_group`),
-        INDEX `idx_category` (`category`),
-        INDEX `idx_created_by` (`created_by_user`)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-
-				"CREATE TABLE IF NOT EXISTS `editor_todo_list_log` (
-        `id` INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-        `original_todo_id` INT UNSIGNED NOT NULL,
-        `tvg_id` VARCHAR(255) NOT NULL,
-        `source_group` VARCHAR(255) NOT NULL,
-        `suggested_group` VARCHAR(255) NOT NULL,
-        `suggested_feed_id` BIGINT(20) UNSIGNED NOT NULL,
-        `created_at` TIMESTAMP NOT NULL,
-        `created_by_user` INT UNSIGNED NOT NULL,
-        `category` ENUM('feed_replacement','feed_review','epg_adjustment','other') NOT NULL,
-        `note` TEXT DEFAULT NULL,
-        `completed_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        `completed_by_user` INT UNSIGNED NOT NULL,
-        `completion_status` ENUM('completed','deleted') NOT NULL,
-        INDEX `idx_original_todo` (`original_todo_id`),
-        INDEX `idx_tvg_source` (`tvg_id`, `source_group`),
-        INDEX `idx_category` (`category`),
-        INDEX `idx_completion_status` (`completion_status`)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
-
-			];
+			$tables = getTableDefinitions();
 
 			foreach ($tables as $sql) {
 				$pdo->exec($sql);
@@ -326,18 +334,14 @@ if (!$is_cli && $_SERVER['REQUEST_METHOD'] === 'POST') {
 				'pass' => $db_pass,
 				'charset' => 'utf8mb4'
 			];
-			file_put_contents(__DIR__ . '/.db_bootstrap', json_encode($db_config));
 
-			// Save settings
-			// Split settings into database credentials and application settings
-			$db_config = [
-				'host' => $db_host,
-				'port' => (int)$db_port,
-				'name' => $db_name,
-				'user' => $db_user,
-				'pass' => $db_pass,
-				'charset' => 'utf8mb4'
-			];
+			file_put_contents(__DIR__ . '/.db_bootstrap', json_encode($db_config));
+			chown(__DIR__ . '/.db_bootstrap', 'www-data');
+			chgrp(__DIR__ . '/.db_bootstrap', 'www-data');
+			chmod(__DIR__ . '/.db_bootstrap', 0600);
+
+			// we'll get this later when a playlist is processed
+			$stream_host = null;
 
 			$app_settings = [
 				'stream_host' => $stream_host,
@@ -349,7 +353,7 @@ if (!$is_cli && $_SERVER['REQUEST_METHOD'] === 'POST') {
 				'fail_retry_max' => $fail_retry_max
 			];
 
-			// Save database credentials to .db_bootstrap file ONLY
+			// Save database credentials to .db_bootstrap 
 			$bootstrap_file = __DIR__ . '/.db_bootstrap';
 			file_put_contents($bootstrap_file, json_encode($db_config, JSON_PRETTY_PRINT));
 			chmod($bootstrap_file, 0600);
@@ -361,8 +365,6 @@ if (!$is_cli && $_SERVER['REQUEST_METHOD'] === 'POST') {
 			}
 
 			// Create admin user
-
-			// Check if username already exists
 			$check_stmt = $pdo->prepare("SELECT COUNT(*) FROM users WHERE username = ?");
 			$check_stmt->execute([$admin_username]);
 			if ($check_stmt->fetchColumn() > 0) {
@@ -408,7 +410,7 @@ if (!$is_cli && $_SERVER['REQUEST_METHOD'] === 'POST') {
             <li>Login to the application</li>
             <li>Import your M3U playlist</li>
             <li>Setup cron job for feed checking</li>
-            <li>Access admin panel to manage settings</li>
+            <li>Sit back and relax while OTT Stream Score starts collecting data!</li>
             </ol>
             <p><a href='login.php'>Go to Login →</a></p>
             </body></html>";
@@ -426,6 +428,7 @@ if (!$is_cli && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // Show web form
 if (!$is_cli) {
+
 	// Check if config.php exists for upgrade detection
 	$is_upgrade = false;
 
@@ -441,8 +444,7 @@ if (!$is_cli) {
 			preg_match("/const\s+DB_USER\s*=\s*'([^']+)'/", $config_content, $user_match) &&
 			preg_match("/const\s+DB_HOST\s*=\s*'([^']+)'/", $config_content, $host_match) &&
 			preg_match("/const\s+DB_NAME\s*=\s*'([^']+)'/", $config_content, $name_match) &&
-			preg_match("/const\s+DB_PORT\s*=\s*(\d+)/", $config_content, $port_match) &&
-			preg_match("/const\s+STREAM_HOST\s*=\s*'([^']+)'/", $config_content, $stream_match)
+			preg_match("/const\s+DB_PORT\s*=\s*(\d+)/", $config_content, $port_match)
 		) {
 
 			$db_user = $user_match[1];
@@ -456,7 +458,6 @@ if (!$is_cli) {
 					'db_name' => $name_match[1],
 					'db_user' => $db_user,
 					'db_pass' => $db_pass,
-					'stream_host' => $stream_match[1],
 					'app_timezone' => 'America/New_York',
 					'batch_size' => '50',
 					'lock_minutes' => '10',
@@ -589,8 +590,6 @@ if (!$is_cli) {
 				border: 1px solid #ffc107;
 				color: #856404;
 			}
-
-			.install_logo {}
 		</style>
 	</head>
 
@@ -598,7 +597,7 @@ if (!$is_cli) {
 		<div class="container">
 			<div class="header">
 				<img src="logo_header.png" alt="OTT Stream Score" class="install_logo">
-				<p style="font-size:18pt; margin-top:10pt;">Setup Wizard (v1.5)</p>
+				<p style="font-size:18pt; margin-top:10pt;">Setup Wizard (v2.2)</p>
 			</div>
 
 			<div class="content">
@@ -653,12 +652,6 @@ if (!$is_cli) {
 					<h3 style="margin-top:30px;">Application Settings</h3>
 
 					<div class="form-group">
-						<label>Stream Host *</label>
-						<input type="text" name="stream_host" value="<?= htmlspecialchars($config_data['stream_host'] ?? '') ?>" placeholder="http://your-panel-domain.com" required>
-						<small>Base URL for building authenticated live stream URLs (no trailing slash). If you are a reseller, this is the custom domain configured for your panel.</small>
-					</div>
-
-					<div class="form-group">
 						<label>Timezone *</label>
 						<select name="app_timezone" required>
 							<?php
@@ -687,7 +680,26 @@ if (!$is_cli) {
 						<small>Default timezone for all application output and timestamps</small>
 					</div>
 
-					<h3 style="margin-top:30px;">Feed Monitoring Settings</h3>
+					<h3 style="margin-top:30px;">Create Admin User</h3>
+
+					<div class="form-group">
+						<label>Admin Username</label>
+						<input type="text" name="admin_username" value="<?= htmlspecialchars($config_data['admin_username'] ?? '') ?>" required>
+					</div>
+
+					<div class="form-group">
+						<label>Admin Password</label>
+						<input type="password" name="admin_password" required>
+						<small>Minimum 8 characters</small>
+					</div>
+
+					<div class="form-group">
+						<label>Confirm Password</label>
+						<input type="password" name="admin_password_confirm" required>
+						<small>Re-enter your password</small>
+					</div>
+
+					<h3 style="margin-top:30px;">Advanced Settings</h3>
 
 					<div class="form-group">
 						<label>Batch Size *</label>
@@ -719,34 +731,6 @@ if (!$is_cli) {
 						<small>Maximum retry interval cap for failed feeds. Default: 360 minutes (6 hours).</small>
 					</div>
 
-					<h3 style="margin-top:30px;">Create Admin User</h3>
-
-					<div class="form-group">
-						<label>Admin Username</label>
-						<input type="text" name="admin_username" value="<?= htmlspecialchars($config_data['admin_username'] ?? '') ?>" required>
-					</div>
-
-					<div class="form-group">
-						<label>Admin Password</label>
-						<input type="password" name="admin_password" required>
-						<small>Minimum 8 characters</small>
-					</div>
-
-					<div class="form-group">
-						<label>Confirm Password</label>
-						<input type="password" name="admin_password_confirm" required>
-						<small>Re-enter your password</small>
-					</div>
-
-					<!-- NOT IN USE... YET 
-
-					<div class="form-group">
-						<label>Admin Email (optional)</label>
-						<input type="email" name="admin_email">
-					</div>
-
-					-->
-
 					<button type="submit" class="btn">Complete Setup</button>
 				</form>
 			</div>
@@ -758,4 +742,69 @@ if (!$is_cli) {
 	exit(0);
 }
 
+// CLI mode
+if ($is_cli) {
+	if ($argc < 16) {
+		echo "Usage: php setup.php <db_host> <db_port> <db_name> <db_user> <db_pass> <app_timezone> <batch_size> <lock_minutes> <ok_recheck_hours> <fail_retry_min> <fail_retry_max> <admin_username> <admin_password> <admin_email>\n";
+		exit(1);
+	}
+
+	try {
+		list(, $db_host, $db_port, $db_name, $db_user, $db_pass, $app_timezone, $batch_size, $lock_minutes, $ok_recheck_hours, $fail_retry_min, $fail_retry_max, $admin_username, $admin_password, $admin_email) = $argv;
+
+		echo "Setting up OTT Stream Score...\n";
+
+		// Test database
+		$dsn = "mysql:host=$db_host;port=$db_port;dbname=$db_name;charset=utf8mb4";
+		$pdo = new PDO($dsn, $db_user, $db_pass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+		echo "✓ Database connected\n";
+
+		// Create tables
+		foreach (getTableDefinitions() as $sql) {
+			$pdo->exec($sql);
+		}
+		echo "✓ Tables created\n";
+
+		// Save .db_bootstrap
+		$db_config = ['host' => $db_host, 'port' => (int)$db_port, 'name' => $db_name, 'user' => $db_user, 'pass' => $db_pass, 'charset' => 'utf8mb4'];
+		file_put_contents(__DIR__ . '/.db_bootstrap', json_encode($db_config));
+		chown(__DIR__ . '/.db_bootstrap', 'www-data');
+		chgrp(__DIR__ . '/.db_bootstrap', 'www-data');
+		chmod(__DIR__ . '/.db_bootstrap', 0600);
+		echo "✓ Config saved\n";
+
+		// Save ALL settings to database
+		$stmt = $pdo->prepare("INSERT INTO settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = ?");
+		$stmt->execute(['app_timezone', $app_timezone, $app_timezone]);
+		$stmt->execute(['batch_size', $batch_size, $batch_size]);
+		$stmt->execute(['lock_minutes', $lock_minutes, $lock_minutes]);
+		$stmt->execute(['ok_recheck_hours', $ok_recheck_hours, $ok_recheck_hours]);
+		$stmt->execute(['fail_retry_min', $fail_retry_min, $fail_retry_min]);
+		$stmt->execute(['fail_retry_max', $fail_retry_max, $fail_retry_max]);
+		echo "✓ Settings saved\n";
+
+		// Create admin user
+		$hash = password_hash($admin_password, PASSWORD_DEFAULT);
+		$stmt = $pdo->prepare("INSERT INTO users (username, password_hash, email) VALUES (?, ?, ?)");
+		$stmt->execute([$admin_username, $hash, $admin_email]);
+		echo "✓ Admin user created\n";
+
+		// Create playlists directory
+		$playlistsDir = __DIR__ . '/playlists';
+		if (!file_exists($playlistsDir)) mkdir($playlistsDir, 0700, true);
+		if (!file_exists($playlistsDir . '/index.php')) {
+			file_put_contents($playlistsDir . '/index.php', "<?php\nhttp_response_code(403);\ndie('Access denied');\n");
+		}
+
+		// Mark installed
+		file_put_contents(__DIR__ . '/.installed', date('Y-m-d H:i:s'));
+
+		echo "\n✓ Setup complete!\n";
+		echo "Password: $admin_password\n";
+		exit(0);
+	} catch (Exception $e) {
+		echo "ERROR: " . $e->getMessage() . "\n";
+		exit(1);
+	}
+}
 ?>

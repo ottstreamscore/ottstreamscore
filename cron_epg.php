@@ -2,20 +2,13 @@
 
 declare(strict_types=1);
 
-// epg_cron.php — EPG downloader + DB importer with compression support
+// epg_cron.php – EPG downloader + DB importer with compression support
 
 chdir(__DIR__);
-
-error_reporting(E_ALL);
-ini_set('display_errors', '0');
-ini_set('log_errors', '1');
-ini_set('error_log', __DIR__ . '/epg_cron_errors.log');
 
 @ini_set('max_execution_time', '0');
 @ini_set('default_socket_timeout', '60');
 @ini_set('memory_limit', '512M');
-
-require_once __DIR__ . '/_boot.php';
 
 // =================== HELPER FUNCTIONS ===================
 
@@ -23,6 +16,7 @@ function epg_log(string $msg): void
 {
 	$line = '[' . date('Y-m-d H:i:s') . '] ' . $msg . PHP_EOL;
 	@file_put_contents(__DIR__ . '/epg_cron.log', $line, FILE_APPEND);
+	echo $msg . PHP_EOL; // Also output to console for cron logs
 }
 
 function update_sync_status(PDO $pdo, string $status): void
@@ -37,9 +31,9 @@ function update_sync_status(PDO $pdo, string $status): void
 
 function detect_and_decompress(string $filepath): ?string
 {
-	// Read first few bytes to detect format
 	$fh = @fopen($filepath, 'rb');
 	if (!$fh) {
+		epg_log("Cannot open file for decompression: $filepath");
 		return null;
 	}
 
@@ -47,6 +41,7 @@ function detect_and_decompress(string $filepath): ?string
 	fclose($fh);
 
 	if (strlen($header) < 2) {
+		epg_log("File too short to detect format");
 		return null;
 	}
 
@@ -54,6 +49,7 @@ function detect_and_decompress(string $filepath): ?string
 	if (ord($header[0]) === 0x1f && ord($header[1]) === 0x8b) {
 		$xmlContent = @file_get_contents('compress.zlib://' . $filepath);
 		if ($xmlContent === false) {
+			epg_log("Failed to decompress GZIP file");
 			return null;
 		}
 		return $xmlContent;
@@ -63,10 +59,10 @@ function detect_and_decompress(string $filepath): ?string
 	if (ord($header[0]) === 0x50 && ord($header[1]) === 0x4b) {
 		$zip = new ZipArchive();
 		if ($zip->open($filepath) !== true) {
+			epg_log("Failed to open ZIP file");
 			return null;
 		}
 
-		// Find first XML file in zip
 		for ($i = 0; $i < $zip->numFiles; $i++) {
 			$filename = $zip->getNameIndex($i);
 			if (preg_match('/\.xml$/i', $filename)) {
@@ -76,6 +72,7 @@ function detect_and_decompress(string $filepath): ?string
 			}
 		}
 		$zip->close();
+		epg_log("No XML file found in ZIP archive");
 		return null;
 	}
 
@@ -87,28 +84,108 @@ function detect_and_decompress(string $filepath): ?string
 	return null;
 }
 
+// Clean up old temp files from previous runs
+function cleanup_old_temp_files(): void
+{
+	$playlistsDir = __DIR__ . '/playlists';
+	if (!is_dir($playlistsDir)) {
+		return;
+	}
+
+	$files = glob($playlistsDir . '/epg_temp_*');
+	foreach ($files as $file) {
+		// Delete files older than 1 hour
+		if (is_file($file) && (time() - filemtime($file)) > 3600) {
+			@unlink($file);
+		}
+	}
+}
+
 // =================== MAIN EXECUTION ===================
 
-try {
-	$pdo = get_db_connection();
+$tmpFile = null;
+$xmlFile = null;
+$pdo = null;
 
-	// Set longer timeouts for long-running import
+try {
+	// Clean up old temp files first
+	cleanup_old_temp_files();
+
+	// Load boot file
+	if (!file_exists(__DIR__ . '/_boot.php')) {
+		throw new Exception("_boot.php not found in " . __DIR__);
+	}
+
+	require_once __DIR__ . '/_boot.php';
+
+	// Verify required functions
+	if (!function_exists('get_db_connection')) {
+		throw new Exception("get_db_connection() function not found");
+	}
+	if (!function_exists('get_setting')) {
+		throw new Exception("get_setting() function not found");
+	}
+
+	$pdo = get_db_connection();
+	// Set longer timeouts
 	try {
-		$pdo->exec("SET SESSION wait_timeout = 28800"); // 8 hours
+		$pdo->exec("SET SESSION wait_timeout = 28800");
 		$pdo->exec("SET SESSION interactive_timeout = 28800");
-		$pdo->exec("SET SESSION max_allowed_packet = 67108864"); // 64MB
+		$pdo->exec("SET SESSION max_allowed_packet = 67108864");
 	} catch (PDOException $e) {
 		epg_log("Warning: Could not set session timeouts: " . $e->getMessage());
 	}
 
-	// Get EPG URL from settings
+	// Get or create timezone object - MUST always be set
+	$tzObj = null;
+	try {
+		// Check if already set from _boot.php
+		if (!isset($tzObj) || !($tzObj instanceof DateTimeZone)) {
+			$timezone = 'UTC'; // default
+			try {
+				$timezone = get_setting('timezone', 'UTC');
+			} catch (Exception $e) {
+				epg_log("Could not get timezone setting: " . $e->getMessage());
+			}
+
+			try {
+				$tzObj = new DateTimeZone($timezone);
+			} catch (Exception $e) {
+				$tzObj = new DateTimeZone('UTC');
+			}
+		} else {
+			epg_log("Using existing timezone object: " . $tzObj->getName());
+		}
+	} catch (Exception $e) {
+		// Ultimate fallback
+		epg_log("Timezone initialization failed, forcing UTC: " . $e->getMessage());
+		$tzObj = new DateTimeZone('UTC');
+	}
+
+	// Final safety check
+	if (!($tzObj instanceof DateTimeZone)) {
+		epg_log("CRITICAL: Forcing UTC timezone as last resort");
+		$tzObj = new DateTimeZone('UTC');
+	}
+
+	// Get EPG URL
 	$epgUrl = get_setting('epg_url', '');
 	if (empty($epgUrl)) {
 		throw new Exception("No EPG URL configured in settings");
 	}
 
-	// Download to playlists directory
-	$tmpFile = __DIR__ . '/playlists/epg_temp_' . time() . '.dat';
+
+	// Check playlists directory
+	$playlistsDir = __DIR__ . '/playlists';
+	if (!is_dir($playlistsDir)) {
+		throw new Exception("Playlists directory does not exist: $playlistsDir");
+	}
+	if (!is_writable($playlistsDir)) {
+		throw new Exception("Playlists directory is not writable: $playlistsDir");
+	}
+
+	// Download EPG file
+	$tmpFile = $playlistsDir . '/epg_temp_' . time() . '.dat';
 
 	$ch = curl_init($epgUrl);
 	$fh = fopen($tmpFile, 'w+b');
@@ -121,7 +198,7 @@ try {
 		CURLOPT_FOLLOWLOCATION => true,
 		CURLOPT_CONNECTTIMEOUT => 10,
 		CURLOPT_TIMEOUT        => 300,
-		CURLOPT_USERAGENT      => 'WhisTV/1.0',
+		CURLOPT_USERAGENT      => 'OTTStreamScore/2.0',
 		CURLOPT_SSL_VERIFYPEER => false,
 		CURLOPT_SSL_VERIFYHOST => 0,
 	]);
@@ -138,25 +215,28 @@ try {
 
 	$fileSize = filesize($tmpFile);
 
-	// Detect format and decompress if needed
+	// Detect format and decompress
 	$xmlContent = detect_and_decompress($tmpFile);
 	if ($xmlContent === null) {
 		throw new Exception("Failed to detect/decompress EPG file format");
 	}
 
-	// Save decompressed XML to temp file
-	$xmlFile = __DIR__ . '/playlists/epg_temp_' . time() . '.xml';
-	file_put_contents($xmlFile, $xmlContent);
-	unset($xmlContent); // Free memory
 
-	// Delete original download
+	// Save decompressed XML
+	$xmlFile = $playlistsDir . '/epg_temp_' . time() . '.xml';
+	if (file_put_contents($xmlFile, $xmlContent) === false) {
+		throw new Exception("Failed to write decompressed XML to: $xmlFile");
+	}
+	unset($xmlContent);
+
+	// Delete compressed file
 	@unlink($tmpFile);
+	$tmpFile = null;
 
-	// Clean up stale records (older than 4 days) BEFORE importing new data
-	// This allows incremental updates while keeping recent programmes
+	// Clean up old records
 	$deletedCount = $pdo->exec("DELETE FROM epg_data WHERE start_timestamp < DATE_SUB(NOW(), INTERVAL 4 DAY)");
 
-	// Parse XML with XMLReader
+	// Parse XML
 	$reader = new XMLReader();
 	if (!$reader->open($xmlFile, null, LIBXML_NOWARNING | LIBXML_NOERROR | LIBXML_COMPACT)) {
 		throw new Exception("Cannot open XML file with XMLReader");
@@ -170,18 +250,19 @@ try {
 			(:tvg_id, :start_timestamp, :end_timestamp, :title, :description)
 	");
 
-	// Only keep programmes starting from "yesterday"
 	$dateUnixNow = strtotime("yesterday");
-
 	$accepted = 0;
 	$skipped = 0;
 	$batchCount = 0;
-	$rowsSinceLastPing = 0;
+	$totalProcessed = 0;
 
+	// Start transaction
 	$pdo->beginTransaction();
 
 	while ($reader->read()) {
 		if ($reader->nodeType === XMLReader::ELEMENT && $reader->name === 'programme') {
+			$totalProcessed++;
+
 			$node = $reader->expand();
 			if (!$node) {
 				$skipped++;
@@ -192,9 +273,9 @@ try {
 			$rawStart = $node->getAttribute('start');
 			$rawStop = $node->getAttribute('stop');
 
-			// Parse XMLTV timestamps
-			$startTs = strtotime($rawStart);
-			$stopTs = strtotime($rawStop);
+			// Parse timestamps
+			$startTs = @strtotime($rawStart);
+			$stopTs = @strtotime($rawStop);
 
 			if ($startTs === false || $stopTs === false) {
 				$skipped++;
@@ -222,13 +303,14 @@ try {
 				}
 			}
 
-			// Convert to configured timezone
+			// Convert to timezone
 			$dtStart = (new DateTime('@' . $startTs))->setTimezone($tzObj);
 			$dtStop = (new DateTime('@' . $stopTs))->setTimezone($tzObj);
 
 			$startStr = $dtStart->format('Y-m-d H:i:s');
 			$stopStr = $dtStop->format('Y-m-d H:i:s');
 
+			// Insert record
 			try {
 				$insert->execute([
 					':tvg_id' => $channelId,
@@ -239,20 +321,21 @@ try {
 				]);
 				$accepted++;
 				$batchCount++;
-				$rowsSinceLastPing++;
 			} catch (PDOException $e) {
 				epg_log("Insert error: " . $e->getMessage());
+				$skipped++;
 			}
 
-			// Commit batch and ping connection every 500 rows
-			if ($batchCount >= 500) {
+			// Commit every 1000 rows to save progress
+			if ($batchCount >= 1000) {
 				$pdo->commit();
+				//	epg_log("Progress: Imported $accepted records (total processed: $totalProcessed, skipped: $skipped)");
 
-				// Ping connection to keep it alive
+				// Ping connection
 				try {
 					$pdo->query('SELECT 1');
 				} catch (PDOException $e) {
-					epg_log("Connection lost, attempting to reconnect");
+					epg_log("Connection lost, reconnecting...");
 					$pdo = get_db_connection();
 					$insert = $pdo->prepare("
 						INSERT IGNORE INTO epg_data 
@@ -262,57 +345,58 @@ try {
 					");
 				}
 
+				// Start new transaction
 				$pdo->beginTransaction();
 				$batchCount = 0;
 			}
-
-			// Ping connection every 2500 rows even if not committing
-			if ($rowsSinceLastPing >= 2500) {
-				try {
-					$pdo->query('SELECT 1');
-					$rowsSinceLastPing = 0;
-				} catch (PDOException $e) {
-					// Connection lost mid-transaction
-					epg_log("Connection lost during processing");
-					throw $e;
-				}
-			}
 		}
+	}
+
+	// Final commit for remaining records
+	if ($batchCount > 0) {
+		$pdo->commit();
+		//	epg_log("Final commit: $batchCount remaining records");
 	}
 
 	$reader->close();
-	$pdo->commit();
 
 	// Delete temp XML file
-	@unlink($xmlFile);
+	if ($xmlFile && file_exists($xmlFile)) {
+		@unlink($xmlFile);
+		//	epg_log("Deleted temp XML file");
+	}
 
-	// Update success timestamp
+	// Update sync status
 	update_sync_status($pdo, date('Y-m-d H:i:s'));
-
-	echo "EPG import complete. Added $accepted programmes, skipped $skipped." . PHP_EOL;
 } catch (Exception $e) {
 	epg_log("ERROR: " . $e->getMessage());
+	epg_log("Stack trace: " . $e->getTraceAsString());
 
-	// Cleanup temp files
-	if (isset($tmpFile) && file_exists($tmpFile)) {
+	// Rollback transaction if active
+	if ($pdo) {
+		try {
+			$pdo->rollBack();
+			//	epg_log("Transaction rolled back");
+		} catch (PDOException $ex) {
+			// Transaction wasn't active
+		}
+	}
+
+	// Clean up temp files
+	if ($tmpFile && file_exists($tmpFile)) {
 		@unlink($tmpFile);
 	}
-	if (isset($xmlFile) && file_exists($xmlFile)) {
+	if ($xmlFile && file_exists($xmlFile)) {
 		@unlink($xmlFile);
 	}
 
-	// ALWAYS attempt to write failure status, even if pdo failed earlier
-	try {
-		if (!isset($pdo)) {
-			// Try to get connection if we don't have it
-			require_once __DIR__ . '/_boot.php';
-			$pdo = get_db_connection();
+	// Update failure status
+	if ($pdo) {
+		try {
+			update_sync_status($pdo, 'failure');
+		} catch (Exception $dbError) {
+			epg_log("Failed to write failure status: " . $dbError->getMessage());
 		}
-		update_sync_status($pdo, 'failure');
-		epg_log("Failure status written to database");
-	} catch (Exception $dbError) {
-		// Log but don't fail if we can't write to DB
-		epg_log("Failed to write failure status to database: " . $dbError->getMessage());
 	}
 
 	echo "ERROR: " . $e->getMessage() . PHP_EOL;

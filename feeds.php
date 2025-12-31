@@ -158,6 +158,16 @@ if (!empty($_GET['q'])) {
 					</div>
 				</div>
 
+
+				<div class="mb-3">
+					<div class="form-check form-switch">
+						<input class="form-check-input" type="checkbox" id="primary-show-catchup">
+						<label class="form-check-label small" for="primary-show-catchup">
+							Catch-Up Only
+						</label>
+					</div>
+				</div>
+
 				<div class="d-grid gap-2">
 					<button id="btn_apply" class="btn btn-dark" type="button">Apply</button>
 					<button id="btn_reset" class="btn btn-outline-secondary" type="button">Reset</button>
@@ -246,6 +256,7 @@ if (!empty($_GET['q'])) {
 				$('#q_fhd').prop('checked', state.q_fhd || false);
 				$('#q_hd').prop('checked', state.q_hd || false);
 				$('#q_sd').prop('checked', state.q_sd || false);
+				$('#primary-show-catchup').prop('checked', state.catchup || false);
 				quickMode = state.quick || '';
 				updateSelectedTags();
 				setQuickActive(quickMode);
@@ -270,6 +281,7 @@ if (!empty($_GET['q'])) {
 			q_fhd: $('#q_fhd').is(':checked'),
 			q_hd: $('#q_hd').is(':checked'),
 			q_sd: $('#q_sd').is(':checked'),
+			catchup: $('#primary-show-catchup').is(':checked'),
 			quick: quickMode
 		};
 		localStorage.setItem('feedsFilters', JSON.stringify(state));
@@ -386,7 +398,8 @@ if (!empty($_GET['q'])) {
 			hide: {
 				ppv: $('#hide_ppv').is(':checked') ? 1 : 0,
 				t247: $('#hide_247').is(':checked') ? 1 : 0
-			}
+			},
+			catchup: $('#primary-show-catchup').is(':checked') ? 1 : 0
 		};
 	}
 
@@ -576,6 +589,13 @@ if (!empty($_GET['q'])) {
 			table.ajax.reload(null, true);
 		});
 
+		// Catch-up filter change handler
+		$('#primary-show-catchup').on('change', function() {
+			saveFilterState();
+			table.ajax.reload(null, true);
+		});
+
+
 		$('#btn_reset').on('click', function() {
 			$('#flt_q').val('');
 			selectedPrefixes = [];
@@ -586,6 +606,7 @@ if (!empty($_GET['q'])) {
 			$('#st_ok,#st_fail,#st_unknown').prop('checked', true);
 			$('#q_4k,#q_fhd,#q_hd,#q_sd').prop('checked', false);
 			$('#hide_ppv,#hide_247').prop('checked', false);
+			$('#primary-show-catchup').prop('checked', false);
 			$('#groupSearch').val('');
 			$('.multiselect-option').show();
 			quickMode = '';

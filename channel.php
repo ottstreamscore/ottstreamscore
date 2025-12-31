@@ -91,6 +91,8 @@ if ($hasJunctionTable) {
 	    f.last_codec,
 	    f.last_checked_at,
 	    COALESCE(f.url_display, f.url) AS url_any,
+		f.catch_up,
+		f.catch_up_days,
 
 	    (COALESCE(f.last_w,0) * COALESCE(f.last_h,0)) AS pixels
 	  FROM channels c
@@ -124,7 +126,8 @@ if ($hasJunctionTable) {
 	    f.last_codec,
 	    f.last_checked_at,
 	    COALESCE(f.url_display, f.url) AS url_any,
-
+		f.catch_up,
+		f.catch_up_days,
 	    (COALESCE(f.last_w,0) * COALESCE(f.last_h,0)) AS pixels
 	  FROM channels c
 	  JOIN feeds f ON f.channel_id = c.id
@@ -201,7 +204,6 @@ if ($clickedPrefix !== '' && $tvgIdBase !== '') {
 					c.tvg_name,
 					c.tvg_logo,
 					c.tvg_id,
-
 					f.id AS feed_id,
 					f.last_ok,
 					f.reliability_score,
@@ -211,7 +213,8 @@ if ($clickedPrefix !== '' && $tvgIdBase !== '') {
 					f.last_codec,
 					f.last_checked_at,
 					COALESCE(f.url_display, f.url) AS url_any,
-
+					f.catch_up,
+					f.catch_up_days,
 					(COALESCE(f.last_w,0) * COALESCE(f.last_h,0)) AS pixels
 				FROM channels c
 				JOIN channel_feeds cf ON cf.channel_id = c.id
@@ -222,6 +225,7 @@ if ($clickedPrefix !== '' && $tvgIdBase !== '') {
 					OR ? LIKE CONCAT('%', SUBSTRING_INDEX(c.tvg_id, '.', 1), '%')
 				)
 				AND c.tvg_id != ?
+				AND c.tvg_id NOT LIKE '%dummy%'
 				ORDER BY
 					COALESCE(f.reliability_score,0) DESC,
 					pixels DESC,
@@ -237,7 +241,6 @@ if ($clickedPrefix !== '' && $tvgIdBase !== '') {
 					c.tvg_name,
 					c.tvg_logo,
 					c.tvg_id,
-
 					f.id AS feed_id,
 					f.last_ok,
 					f.reliability_score,
@@ -247,7 +250,8 @@ if ($clickedPrefix !== '' && $tvgIdBase !== '') {
 					f.last_codec,
 					f.last_checked_at,
 					COALESCE(f.url_display, f.url) AS url_any,
-
+					f.catch_up,
+					f.catch_up_days,
 					(COALESCE(f.last_w,0) * COALESCE(f.last_h,0)) AS pixels
 				FROM channels c
 				JOIN feeds f ON f.channel_id = c.id
@@ -257,6 +261,7 @@ if ($clickedPrefix !== '' && $tvgIdBase !== '') {
 					OR ? LIKE CONCAT('%', SUBSTRING_INDEX(c.tvg_id, '.', 1), '%')
 				)
 				AND c.tvg_id != ?
+				AND c.tvg_id NOT LIKE '%dummy%'
 				ORDER BY
 					COALESCE(f.reliability_score,0) DESC,
 					pixels DESC,
@@ -278,7 +283,6 @@ if ($clickedPrefix !== '' && $tvgIdBase !== '') {
 		}
 	}
 }
-
 // Count total association matches
 $totalAssocMatches = 0;
 foreach ($associationMatches as $am) {
@@ -482,6 +486,13 @@ $best = $rows[0] ?? null;
 				<span class="stream-inline-label">Codec:</span>
 				<span class="stream-inline-value"><?= h($bestCodec) ?></span>
 			</div>
+			<?php if (!empty($best['catch_up'])): ?>
+				<div class="stream-inline-item">
+					<i class="fa-solid fa-clock-rotate-left"></i>
+					<span class="stream-inline-label">Catch-Up:</span>
+					<span class="stream-inline-value"><?= h($best['catch_up_days'] ?? 'N/A') ?> days</span>
+				</div>
+			<?php endif; ?>
 		</div>
 	</div>
 <?php endif; ?>
@@ -540,6 +551,13 @@ $best = $rows[0] ?? null;
 						</div>
 
 						<div class="form-check form-switch">
+							<input class="form-check-input" type="checkbox" id="primary-show-catchup">
+							<label class="form-check-label small" for="primary-show-catchup">
+								Catch-Up Only
+							</label>
+						</div>
+
+						<div class="form-check form-switch">
 							<input class="form-check-input" type="checkbox" id="primary-show-epg">
 							<label class="form-check-label small" for="primary-show-epg">
 								Show EPG Info
@@ -571,8 +589,9 @@ $best = $rows[0] ?? null;
 						$feedTvgId = (string)$r['tvg_id'];
 						?>
 
-						<div class="card shadow-sm mb-3 feed-card <?= $isBest ? 'border-success' : '' ?>"
+						<div class="card shadow-sm mb-3 feed-card <?= $isBest ? 'border-success' : '' ?> "
 							data-score="<?= $score ?>"
+							data-has-catchup="<?= !empty($r['catch_up']) ? '1' : '0' ?>"
 							data-group="<?= h($groupTitle) ?>"
 							data-channel="<?= h((string)$r['tvg_name']) ?>"
 							data-file="<?= h($file) ?>"
@@ -657,6 +676,13 @@ $best = $rows[0] ?? null;
 										<span class="stream-inline-label">Codec:</span>
 										<span class="stream-inline-value"><?= h($codec) ?></span>
 									</div>
+									<?php if (!empty($r['catch_up'])): ?>
+										<div class="stream-inline-item">
+											<i class="fa-solid fa-clock-rotate-left"></i>
+											<span class="stream-inline-label">Catch-Up:</span>
+											<span class="stream-inline-value"><?= h($r['catch_up_days'] ?? 'N/A') ?> days</span>
+										</div>
+									<?php endif; ?>
 								</div>
 
 								<!-- Bottom section: Last checked & Status left, Actions right -->
@@ -721,7 +747,7 @@ $best = $rows[0] ?? null;
 			</div>
 		<?php else: ?>
 
-			<div class="alert alert-warning d-flex align-items-start mb-3">
+			<div class="alert alert-warning d-flex align-items-start mb-4">
 				<i class="fa-solid fa-triangle-exclamation me-2 mt-1"></i>
 				<div>
 					<strong>Verify before use.</strong> These suggestions come from your custom group associations and match on tvg-id similarity—they may not always contain identical content.
@@ -755,6 +781,13 @@ $best = $rows[0] ?? null;
 									<option value="codec">Codec</option>
 									<option value="checked">Last Checked</option>
 								</select>
+							</div>
+
+							<div class="form-check form-switch">
+								<input class="form-check-input" type="checkbox" id="assoc-show-catchup">
+								<label class="form-check-label small" for="assoc-show-catchup">
+									Catch-Up Only
+								</label>
 							</div>
 
 							<div class="form-check form-switch">
@@ -797,6 +830,7 @@ $best = $rows[0] ?? null;
 
 									<div class="card shadow-sm mb-3 feed-card"
 										data-score="<?= $score ?>"
+										data-has-catchup="<?= !empty($r['catch_up']) ? '1' : '0' ?>"
 										data-group="<?= h($groupTitle) ?>"
 										data-channel="<?= h((string)$r['tvg_name']) ?>"
 										data-file="<?= h($file) ?>"
@@ -868,6 +902,13 @@ $best = $rows[0] ?? null;
 													<span class="stream-inline-label">Codec:</span>
 													<span class="stream-inline-value"><?= h($codec) ?></span>
 												</div>
+												<?php if (!empty($r['catch_up'])): ?>
+													<div class="stream-inline-item">
+														<i class="fa-solid fa-clock-rotate-left"></i>
+														<span class="stream-inline-label">Catch-Up:</span>
+														<span class="stream-inline-value"><?= h($r['catch_up_days'] ?? 'N/A') ?> days</span>
+													</div>
+												<?php endif; ?>
 											</div>
 
 											<!-- Bottom section: Last checked & Status left, Actions right -->
@@ -1134,6 +1175,28 @@ $best = $rows[0] ?? null;
 			filterFeeds($('#primary-feeds-container'), $(this).val());
 		});
 
+		// Primary feeds catch-up toggle
+		$('#primary-show-catchup').on('change', function() {
+			const highlight = $(this).is(':checked');
+			$('#primary-feeds-container .feed-card').each(function() {
+				const $card = $(this);
+				const hasCatchup = $card.data('has-catchup') === 1;
+
+				if (highlight) {
+					if (hasCatchup) {
+						$card.addClass('border-warning border-1');
+					} else {
+						$card.removeClass('border-success').addClass('opacity-50');
+					}
+				} else {
+					$card.removeClass('border-warning border-1 opacity-50');
+					if ($card.data('score') === parseFloat($('#primary-feeds-container .feed-card').first().data('score'))) {
+						$card.addClass('border-success');
+					}
+				}
+			});
+		});
+
 		// Primary feeds EPG toggle
 		$('#primary-show-epg').on('change', function() {
 			const show = $(this).is(':checked');
@@ -1161,6 +1224,25 @@ $best = $rows[0] ?? null;
 			const searchText = $(this).val();
 			$('.assoc-feeds-container').each(function() {
 				filterFeeds($(this), searchText);
+			});
+		});
+
+		// Association feeds catch-up toggle
+		$('#assoc-show-catchup').on('change', function() {
+			const highlight = $(this).is(':checked');
+			$('.assoc-feeds-container .feed-card').each(function() {
+				const $card = $(this);
+				const hasCatchup = $card.data('has-catchup') === 1;
+
+				if (highlight) {
+					if (hasCatchup) {
+						$card.addClass('border-warning border-1');
+					} else {
+						$card.addClass('opacity-50');
+					}
+				} else {
+					$card.removeClass('border-warning border-1 opacity-50');
+				}
 			});
 		});
 

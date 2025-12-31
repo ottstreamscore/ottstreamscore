@@ -1,14 +1,14 @@
 # OTT Stream Score
 
-**Smart IPTV feed monitoring, quality tracking, and playlist optimization**  
+**Smart playlist feed monitoring, quality tracking, and optimization**  
 
-OTT Stream Score is a comprehensive IPTV playlist management system that continuously monitors stream health, tracks quality metrics, identifies optimal feeds, and helps editors maintain high-quality playlists through intelligent recommendations and collaborative workflows.
+OTT Stream Score is a comprehensive playlist management system that continuously monitors stream health, tracks quality metrics, identifies optimal feeds, and helps editors maintain high-quality playlists through intelligent recommendations and collaborative workflows.
 
 ---
 
 ## What Problem Does It Solve?
 
-IPTV playlists are messy. The same channel appears dozens of times across different groups, regions, and providers. Some streams work reliably, others fail constantly. Manual testing is time-consuming and doesn't scale. You need data to make decisions.
+Playlists are messy. The same channel appears dozens of times across different groups, regions, and providers. Some streams work reliably, others fail constantly. Manual testing is time-consuming and doesn't scale. You need data to make decisions.
 
 **OTT Stream Score gives you that data.**
 
@@ -21,7 +21,7 @@ Instead of guessing which feed is best or manually testing streams, the system:
 - Previews any stream in-browser without external tools
 
 **Built for:**
-- IPTV providers curating custom playlists
+- OTT providers curating custom playlists
 - Playlist editors maintaining large channel libraries
 - Power users who want data-driven feed selection
 - Teams collaborating on playlist optimization
@@ -74,6 +74,7 @@ Feeds are ranked using weighted metrics:
 - EPG schedule comparison to verify content matches
 - Historical reliability charts
 - Quick identification of best available source
+- Catch Up/Timeshift detection and display
 
 ### 🌐 Group Associations
 
@@ -202,7 +203,7 @@ Use the insights to optimize your playlist:
 - Web server (Apache/Nginx)
 - Cron access
 
-  **⚠️ Important:** Panel owners must provision a unique subscriber account for OTT Stream Score. Individual users must use a second connection, or multi-connection account. OTT Stream Score monitors feeds 24/7 and will prevent you from watching streams simultaneously on a separate device and will result in false-positive failed stream reports.
+  **⚠️ Important:** OTT Providers must provision a unique subscriber account for OTT Stream Score. Individual users must use a second connection, or multi-connection account. OTT Stream Score monitors feeds 24/7 and will prevent you from watching streams simultaneously on a separate device and will result in false-positive failed stream reports.
 
 ### Installation
 
@@ -216,21 +217,9 @@ Use the insights to optimize your playlist:
 System overview with feed health metrics and recent check activity
 ![Dashboard](images/dashboard.png)
 
-### Channel Management
-Search and filter thousands of channels with advanced DataTables UI
-![Channels](images/channels.png)
-
-### Feed Management
-Monitor and sort feeds by reliability, quality, and performance metrics
-![Feeds](images/feeds.png)
-
 ### Channel Detail
 Compare all feed sources for a channel with ranked quality scores
 ![Channel Detail](images/single_channel.png)
-
-### Feed History
-Track performance trends and reliability over time for any feed
-![Feed History](images/feed_history.png)
 
 ### Reports
 Audit channel groups and discover better alternatives across categories
@@ -277,7 +266,7 @@ Result: Higher quality playlist backed by performance data, not guesswork.
 
 ## Configuration
 
-All configuration managed via Admin panel after installation:
+All configuration managed via Admin panel after installation, login and click "Admin" in the navigation header.
 
 - **Stream host** - Base URL for authenticated streams
 - **Timezone** - Application timezone
@@ -288,7 +277,6 @@ All configuration managed via Admin panel after installation:
 - **Update stream credentials** - Change the authorized subscriber credentials for the stored playlist
 - **Database credentials** - Update connection settings
 - **User management** - Create and manage user accounts
-- **Security monitoring** - View failed login attempts and reset lockouts
 
 ---
 
@@ -319,6 +307,6 @@ All configuration managed via Admin panel after installation:
 
 ---
 
-**Current Version:** 2.1
+**Current Version:** 2.2
 **Release Date:** December 2025  
-**Previous Version:** 2.0 (December 2025)
+**Previous Version:** 2.1 (December 2025)

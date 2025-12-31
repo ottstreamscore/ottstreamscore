@@ -425,13 +425,49 @@ try {
 		'message' => "Failed to create epg_data table: " . $e->getMessage()
 	];
 }
+
+
+// Migration: Add catch_up and catch_up_days columns to feeds table
+try {
+	// Check if catch_up column exists
+	$result = $pdo->query("SHOW COLUMNS FROM `feeds` LIKE 'catch_up'");
+	$column_exists = $result->rowCount() > 0;
+
+	if (!$column_exists) {
+		$sql = "ALTER TABLE `feeds` 
+			ADD COLUMN `catch_up` VARCHAR(50) NULL DEFAULT NULL AFTER `url_hash`,
+			ADD COLUMN `catch_up_days` VARCHAR(10) NULL DEFAULT NULL AFTER `catch_up`";
+
+		$pdo->exec($sql);
+		$migrations[] = [
+			'status' => 'success',
+			'message' => 'Added catch_up and catch_up_days columns to feeds table'
+		];
+	} else {
+		$migrations[] = [
+			'status' => 'skipped',
+			'message' => 'catch_up columns already exist in feeds table'
+		];
+	}
+} catch (PDOException $e) {
+	$migrations[] = [
+		'status' => 'error',
+		'message' => "Failed to add catch_up columns to feeds table: " . $e->getMessage()
+	];
+}
+
+
+
+
 // Migration: Add new playlist-related settings
 try {
 	$sql = "INSERT IGNORE INTO `settings` (`setting_key`, `setting_value`, `description`) VALUES 
 		('playlist_url', '', 'URL to hosted M3U playlist'),
 		('last_sync_date', NULL, 'Last successful playlist sync timestamp'),
 		('epg_last_sync_date', NULL, 'Last successful EPG sync timestamp'),
-		('epg_url', '', 'URL to hosted EPG XML file')";
+		('epg_url', '', 'URL to hosted EPG XML file'),
+		('managed_hosting', NULL, 'Managed hosting configuration setting'),
+		('pause_cron', NULL, 'Pause cron job execution')";;
 
 	$stmt = $pdo->prepare($sql);
 	$stmt->execute();
@@ -440,18 +476,18 @@ try {
 	if ($rowsAffected > 0) {
 		$migrations[] = [
 			'status' => 'success',
-			'message' => "Added $rowsAffected new playlist settings"
+			'message' => "Added $rowsAffected new settings"
 		];
 	} else {
 		$migrations[] = [
 			'status' => 'skipped',
-			'message' => 'Playlist settings already exist'
+			'message' => 'Settings already exist'
 		];
 	}
 } catch (PDOException $e) {
 	$migrations[] = [
 		'status' => 'error',
-		'message' => "Failed to add playlist settings: " . $e->getMessage()
+		'message' => "Failed to add settings: " . $e->getMessage()
 	];
 }
 

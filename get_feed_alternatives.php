@@ -333,6 +333,7 @@ try {
 						OR ? LIKE CONCAT('%', SUBSTRING_INDEX(c.tvg_id, '.', 1), '%')
 					)
 					AND c.tvg_id != ?
+					AND c.tvg_id NOT LIKE '%dummy%'
 					ORDER BY
 						COALESCE(f.reliability_score,0) DESC,
 						pixels DESC,
@@ -362,6 +363,7 @@ try {
 						OR ? LIKE CONCAT('%', SUBSTRING_INDEX(c.tvg_id, '.', 1), '%')
 					)
 					AND c.tvg_id != ?
+					AND c.tvg_id NOT LIKE '%dummy%'
 					ORDER BY
 						COALESCE(f.reliability_score,0) DESC,
 						pixels DESC,

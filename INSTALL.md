@@ -1,8 +1,8 @@
-# OTT Stream Score v2.1 - Installation & Upgrade Guide
+# OTT Stream Score v2.2 - Installation & Upgrade Guide
 
 ## Overview
 
-Version 2.1 adds EPG integration, task management, group associations for cross-regional discovery, feed comparison tools, and comprehensive playlist optimization workflows. Database changes include EPG tables, task tables, and group association tables. Choose your installation path below based on your situation.
+Version 2.2 adds powerful new capabilities for feed management and monitoring. This release introduces system-wide pause control for automated feed checks, catch-up/timeshift detection to ensure feature parity during feed replacements, inline task note editing for improved team collaboration, and foundational support for our upcoming managed hosting option. These enhancements give you greater control over your feed monitoring infrastructure while streamlining the feed replacement workflow with better feature visibility and comparison tools.
 
 ---
 
@@ -103,7 +103,7 @@ For brand new installations of OTT Stream Score.
 
 ## Upgrading from v1.3+
 
-**For users currently running v1.3, v1.4, or v1.5.**
+**For users currently running v1.3+**
 
 This is the simplest upgrade path using the `migrate.php` script.
 
@@ -142,11 +142,11 @@ tar -czf ottstreamscore_backup_$(date +%F).tar.gz /path/to/your/installation
    
    The migration script will:
    - Verify your installation is v1.3 or later
-   - Create new v2.1 tables (epg_data, group_associations, group_association_prefixes, editor_todo_list, editor_todo_list_log)
+   - Create new tables added since last release
    - Create `/playlists` directory if missing (0700 permissions with protection)
-   - Report success or skip if table/directory already exists
+   - Report success or skip synopsis of actions taken
 
-4. **Configure EPG** (new feature)
+4. **Configure EPG** (Introduced in v2.0)
    
    Navigate to Admin → Playlist tab:
    - Enter your EPG (XMLTV) URL
@@ -166,29 +166,18 @@ tar -czf ottstreamscore_backup_$(date +%F).tar.gz /path/to/your/installation
 
 **✅ Upgrade complete!** Your installation now supports EPG integration, task management, and group associations.
 
-### What Gets Migrated
-
-The migration script adds:
-- ✅ `epg_data` - Electronic Program Guide storage
-- ✅ `group_associations` - Named association groups
-- ✅ `group_association_prefixes` - Prefix-to-association mappings
-- ✅ `editor_todo_list` - Active tasks
-- ✅ `editor_todo_list_log` - Task history
-- ✅ Safe to run multiple times (idempotent)
-
 ### Expected Output
 
 **CLI mode:**
 ```
 ======================================================================
-OTT Stream Score - Database Migration (v1.3+ to v2.1)
+OTT Stream Score - Database Migration (v1.3+ to v2.2)
 ======================================================================
 
 ✅ Created epg_data table
 ✅ Created group_associations table
-✅ Created group_association_prefixes table
-✅ Created editor_todo_list table
-✅ Created editor_todo_list_log table
+✅ ...
+✅ ...
 
 ======================================================================
 ✅ Migration completed successfully!
@@ -206,7 +195,7 @@ OTT Stream Score - Database Migration (v1.3+ to v2.1)
 
 **For users running versions 1.2 or earlier.**
 
-If you're upgrading from before v1.3, you must first upgrade to v1.3, then upgrade to v2.1.
+If you're upgrading from before v1.3, you must first upgrade to v1.3, then upgrade to the current version.
 
 ### Why This Matters
 
@@ -248,15 +237,14 @@ Version 1.3 introduced major architectural changes:
 
 5. **Login and verify** settings in Admin Dashboard
 
-**Step 2: Upgrade to v2.1**
+**Step 2: Upgrade to Current Version**
 
 Once you're successfully running v1.3+:
 
-1. **Get v2.1 files:**
+1. **Get current version files:**
 ```bash
    cd /path/to/installation
    git checkout main
-   # or: git checkout v2.1
 ```
 
 2. **Run migration:**
@@ -270,21 +258,6 @@ Once you're successfully running v1.3+:
    - Create group associations (optional)
 
 **✅ Upgrade complete!**
-
-### Key Migration Notes
-
-**From pre-v1.3 to v1.3:**
-- config.php is deprecated and replaced by database settings
-- Authentication is now required (create admin account)
-- Database credentials move to `.db_bootstrap` file
-
-**From v1.3-v1.5 to v2.1:**
-- Adds EPG integration with automated syncing
-- Adds task management system for collaborative workflows
-- Adds group associations for cross-regional discovery
-- Adds feed comparison and EPG schedule comparison
-- All previous features remain unchanged
-- No breaking changes
 
 ---
 
@@ -302,6 +275,7 @@ Once installed, access your application at:
 ### Admin Panel Features
 
 **Application Settings:**
+- Start/Pause automated feed checks
 - Stream host configuration
 - Timezone settings
 - Monitoring intervals (batch size, lock duration)
@@ -361,40 +335,6 @@ Adjust based on your feed count and server capacity.
 **Frequency recommendations:**
 - `0 0,12 * * *` - Twice daily at midnight and noon (standard, recommended)
 - `0 0 * * *` - Once daily at midnight (lighter load)
-
-### New v2.1 Features to Explore
-
-**EPG Integration:**
-- View program schedules on channel pages (toggle EPG display)
-- Compare schedules between similar channels
-- Verify content matches before feed replacement
-- EPG data automatically syncs via cron
-
-**Task Management:**
-- Create tasks for feed replacements, reviews, or EPG adjustments
-- Assign alternative feeds with full context
-- Add notes explaining changes
-- Track task completion history
-- Collaborate with team members on playlist optimization
-
-**Group Associations:**
-- Define associations by language, region, or content type
-- Link prefixes (e.g., US| + UK| + CA| = "English Speaking")
-- Discover backup streams across regions automatically
-- Find alternatives when primary feeds fail
-
-**Feed Comparison:**
-- Side-by-side metrics comparison
-- EPG schedule comparison
-- Historical reliability charts
-- Quality score breakdowns
-
-**Group Audit:**
-- Analyze entire categories for optimization opportunities
-- Get recommendations for better alternatives
-- Filter by date range (7/30/90 days, all time, custom)
-- Dismiss irrelevant suggestions
-- Bulk workflow for systematic improvement
 
 ---
 
@@ -640,36 +580,6 @@ Prevents setup from running multiple times.
 
 ---
 
-## Database Schema
-
-### Version 2.1 Tables
-
-**Core tables:**
-- `channels` - Channel metadata
-- `feeds` - Feed URLs and current status
-- `feed_id_mapping` - URL hash mapping for feed ID persistence
-- `channel_feeds` - Many-to-many relationship (supports duplicates)
-- `feed_checks` - Historical check data
-- `feed_check_queue` - Monitoring schedule
-- `stream_preview_lock` - Mutex coordination for stream preview
-
-**EPG tables:**
-- `epg_data` - Electronic Program Guide storage
-
-**Association tables:**
-- `group_associations` - Named association groups
-- `group_association_prefixes` - Prefix-to-association mappings
-
-**Task tables:**
-- `editor_todo_list` - Active tasks
-- `editor_todo_list_log` - Task history
-
-**Management tables:**
-- `settings` - Application configuration
-- `users` - User accounts and authentication
-- `login_attempts` - Security logging and rate limiting 
-- `group_audit_ignores` - User-dismissed feed recommendations
-
 ## Getting Help
 
 ### Before Asking for Help
@@ -696,6 +606,7 @@ Prevents setup from running multiple times.
 
 ## Version History
 
+**v2.2** (December 2025) - Ability to pause feed checks, task note editing, catch-up support, managed hosting option prep
 **v2.1** (December 2025) - EPG integration, task management, group associations, feed comparison  
 **v1.5** (December 2025) - Native video player for stream previews  
 **v1.4** (December 2025) - User Management, migration interface  
@@ -708,10 +619,10 @@ Prevents setup from running multiple times.
 
 - **[README.md](README.md)** - Feature overview and quick start
 - **[SECURITY.md](SECURITY.md)** - Security best practices
-- **[RELEASE_NOTES_2.1.md](RELEASE_NOTES_2.1.md)** - Version 2.1 changelog
+- **[RELEASE_NOTES_2.1.md](RELEASE_NOTES_2.2.md)** - Version 2.2 changelog
 
 ---
 
-**Current Version:** 2.1  
+**Current Version:** 2.2  
 **Release Date:** December 2025  
 **Support:** GitHub Issues and Documentation

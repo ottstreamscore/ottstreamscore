@@ -27,6 +27,10 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 $flash = $_SESSION['playlist_flash'] ?? null;
 unset($_SESSION['playlist_flash']);
 
+// check to see if this is managed hosting
+$is_managed_hosting = get_setting('managed_hosting', '');
+
+
 /* ============================================================================
 PLAYLIST IMPORT HELPERS
 ============================================================================ */
@@ -108,23 +112,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 		$pdo = get_db_connection();
 
 		switch ($_POST['action']) {
+
 			case 'update_settings':
 				try {
-					$settings_to_update = [
-						'stream_host' => sanitize_input($_POST['stream_host'] ?? ''),
-						'app_timezone' => sanitize_input($_POST['app_timezone'] ?? 'America/New_York'),
-						'batch_size' => (int)($_POST['batch_size'] ?? 50),
-						'lock_minutes' => (int)($_POST['lock_minutes'] ?? 10),
-						'ok_recheck_hours' => (int)($_POST['ok_recheck_hours'] ?? 72),
-						'fail_retry_min' => (int)($_POST['fail_retry_min'] ?? 30),
-						'fail_retry_max' => (int)($_POST['fail_retry_max'] ?? 360)
-					];
+
+					if (!$is_managed_hosting) {
+
+						$settings_to_update = [
+							'app_timezone' => sanitize_input($_POST['app_timezone'] ?? 'America/New_York'),
+							'batch_size' => (int)($_POST['batch_size'] ?? 50),
+							'lock_minutes' => (int)($_POST['lock_minutes'] ?? 10),
+							'ok_recheck_hours' => (int)($_POST['ok_recheck_hours'] ?? 72),
+							'fail_retry_min' => (int)($_POST['fail_retry_min'] ?? 30),
+							'fail_retry_max' => (int)($_POST['fail_retry_max'] ?? 360)
+						];
+					} else {
+
+						$settings_to_update = [
+							'app_timezone' => sanitize_input($_POST['app_timezone'] ?? 'America/New_York'),
+						];
+					}
+
+					// Handle pause_cron toggle (available for all users)
+					$settings_to_update['pause_cron'] = isset($_POST['pause_cron']) ? null : 1;
 
 					$stmt = $pdo->prepare("
-                        INSERT INTO settings (setting_key, setting_value)
-                        VALUES (:key, :value)
-                        ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)
-                    ");
+						INSERT INTO settings (setting_key, setting_value)
+						VALUES (:key, :value)
+						ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)
+					");
 
 					foreach ($settings_to_update as $key => $value) {
 						$stmt->execute(['key' => $key, 'value' => $value]);
@@ -134,6 +150,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 				} catch (Exception $e) {
 					$error = 'Failed to update settings: ' . $e->getMessage();
 				}
+
 				break;
 
 			case 'change_password':
@@ -263,44 +280,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 			case 'update_database':
 				try {
-					$new_config = [
-						'host' => sanitize_input($_POST['db_host'] ?? ''),
-						'port' => (int)($_POST['db_port'] ?? 3306),
-						'name' => sanitize_input($_POST['db_name'] ?? ''),
-						'user' => sanitize_input($_POST['db_user'] ?? ''),
-						'charset' => 'utf8mb4'
-					];
 
-					// Only update password if provided
-					if (!empty($_POST['db_pass'])) {
-						$new_config['pass'] = $_POST['db_pass']; // Don't sanitize passwords
-					} else {
-						// Read current password from .db_bootstrap (NOT from settings table)
-						$bootstrap_file = __DIR__ . '/.db_bootstrap';
-						if (file_exists($bootstrap_file)) {
-							$current = json_decode(file_get_contents($bootstrap_file), true);
-							$new_config['pass'] = $current['pass'] ?? '';
+					if (!$is_managed_hosting) {
+
+						$new_config = [
+							'host' => sanitize_input($_POST['db_host'] ?? ''),
+							'port' => (int)($_POST['db_port'] ?? 3306),
+							'name' => sanitize_input($_POST['db_name'] ?? ''),
+							'user' => sanitize_input($_POST['db_user'] ?? ''),
+							'charset' => 'utf8mb4'
+						];
+
+						// Only update password if provided
+						if (!empty($_POST['db_pass'])) {
+							$new_config['pass'] = $_POST['db_pass']; // Don't sanitize passwords
+						} else {
+							// Read current password from .db_bootstrap (NOT from settings table)
+							$bootstrap_file = __DIR__ . '/.db_bootstrap';
+							if (file_exists($bootstrap_file)) {
+								$current = json_decode(file_get_contents($bootstrap_file), true);
+								$new_config['pass'] = $current['pass'] ?? '';
+							}
 						}
+
+						// Test new connection
+						$test_dsn = sprintf(
+							'mysql:host=%s;port=%d;dbname=%s;charset=%s',
+							$new_config['host'],
+							$new_config['port'],
+							$new_config['name'],
+							$new_config['charset']
+						);
+
+						$test_pdo = new PDO($test_dsn, $new_config['user'], $new_config['pass'], [
+							PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION
+						]);
+
+						// save database connection information
+						file_put_contents(__DIR__ . '/.db_bootstrap', json_encode($new_config, JSON_PRETTY_PRINT));
+						chmod(__DIR__ . '/.db_bootstrap', 0600);
+
+						$success = 'Database settings updated successfully';
+					} else {
+						$error = 'Database settings cannot be modified on managed hosting';
 					}
-
-					// Test new connection
-					$test_dsn = sprintf(
-						'mysql:host=%s;port=%d;dbname=%s;charset=%s',
-						$new_config['host'],
-						$new_config['port'],
-						$new_config['name'],
-						$new_config['charset']
-					);
-
-					$test_pdo = new PDO($test_dsn, $new_config['user'], $new_config['pass'], [
-						PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION
-					]);
-
-					// save database connection information
-					file_put_contents(__DIR__ . '/.db_bootstrap', json_encode($new_config, JSON_PRETTY_PRINT));
-					chmod(__DIR__ . '/.db_bootstrap', 0600);
-
-					$success = 'Database settings updated successfully';
 				} catch (PDOException $e) {
 					$error = 'Database connection test failed: ' . $e->getMessage();
 				} catch (Exception $e) {
@@ -463,6 +486,92 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 					}
 				}
 				$tab = 'associations';
+				break;
+
+
+			case 'delete_data':
+
+				$deletePlaylist = isset($_POST['delete_playlist']) && $_POST['delete_playlist'] === '1';
+				$deleteEpg = isset($_POST['delete_epg']) && $_POST['delete_epg'] === '1';
+				$authUsername = $_POST['auth_username'] ?? '';
+				$authPassword = $_POST['auth_password'] ?? '';
+
+				if (!$deletePlaylist && !$deleteEpg) {
+					$error = 'Please select at least one type of data to delete';
+				} elseif (empty($authUsername) || empty($authPassword)) {
+					$error = 'Username and password are required for authorization';
+				} else {
+					try {
+						// Get the first user (primary user)
+						$stmt = $pdo->prepare("SELECT id, username, password_hash FROM users ORDER BY id ASC LIMIT 1");
+						$stmt->execute();
+						$primaryUser = $stmt->fetch();
+
+						if (!$primaryUser) {
+							$error = 'Primary user not found';
+						} elseif ($authUsername !== $primaryUser['username']) {
+							$error = 'Authorization failed: You must authenticate as the primary user (User #1)';
+						} elseif (!password_verify($authPassword, $primaryUser['password_hash'])) {
+							$error = 'Authorization failed: Incorrect password';
+						} else {
+							// Authentication successful - proceed with deletion
+							$deletedItems = [];
+
+							try {
+								if ($deletePlaylist) {
+
+									$pdo->exec("SET FOREIGN_KEY_CHECKS = 0");
+									$pdo->exec("TRUNCATE TABLE channel_feeds");
+									$pdo->exec("TRUNCATE TABLE feed_checks");
+									$pdo->exec("TRUNCATE TABLE feed_check_queue");
+									$pdo->exec("TRUNCATE TABLE feed_id_mapping");
+									$pdo->exec("TRUNCATE TABLE editor_todo_list");
+									$pdo->exec("TRUNCATE TABLE group_association_prefixes");
+									$pdo->exec("TRUNCATE TABLE group_associations");
+									$pdo->exec("TRUNCATE TABLE group_audit_ignores");
+									$pdo->exec("TRUNCATE TABLE feeds");
+									$pdo->exec("TRUNCATE TABLE channels");
+
+									// Re-enable foreign key checks
+									$pdo->exec("SET FOREIGN_KEY_CHECKS = 1");
+
+									// Reset playlist_url setting to NULL
+									$stmt = $pdo->prepare("UPDATE settings SET setting_value = NULL WHERE setting_key = 'playlist_url'");
+									$stmt->execute();
+
+									$deletedItems[] = 'All playlist data deleted';
+								}
+
+								if ($deleteEpg) {
+									// Truncate EPG table 
+									$pdo->exec("TRUNCATE TABLE epg_data");
+
+									// Reset epg_url setting to NULL
+									$stmt = $pdo->prepare("UPDATE settings SET setting_value = NULL WHERE setting_key = 'epg_url'");
+									$stmt->execute();
+
+									$deletedItems[] = 'All EPG data deleted';
+								}
+
+								$success = implode('. ', $deletedItems) . '. You can now import fresh data.';
+							} catch (Exception $e) {
+								// Make sure to re-enable foreign keys even on error
+								try {
+									$pdo->exec("SET FOREIGN_KEY_CHECKS = 1");
+								} catch (Exception $e2) {
+									// Ignore
+								}
+								throw $e;
+							}
+						}
+					} catch (Exception $e) {
+						if ($pdo->inTransaction()) {
+							$pdo->rollBack();
+						}
+						$error = 'Failed to delete data: ' . $e->getMessage();
+					}
+				}
+				$tab = 'delete';
 				break;
 		}
 	}
@@ -662,6 +771,58 @@ try {
 		margin-bottom: 20pt;
 	}
 
+	.toggle-switch {
+		position: relative;
+		display: inline-block;
+		width: 54px;
+		height: 28px;
+		margin: 0;
+	}
+
+	.toggle-switch input {
+		opacity: 0;
+		width: 0;
+		height: 0;
+	}
+
+	.toggle-slider {
+		position: absolute;
+		cursor: pointer;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background-color: #dc3545;
+		transition: 0.4s;
+		border-radius: 28px;
+	}
+
+	.toggle-slider:before {
+		position: absolute;
+		content: "";
+		height: 20px;
+		width: 20px;
+		left: 4px;
+		bottom: 4px;
+		background-color: white;
+		transition: 0.4s;
+		border-radius: 50%;
+	}
+
+	input:checked+.toggle-slider {
+		background-color: #28a745;
+	}
+
+	input:checked+.toggle-slider:before {
+		transform: translateX(26px);
+	}
+
+	.cron-status-badge {
+		transition: all 0.3s ease;
+		font-size: 0.95rem;
+		font-weight: 600;
+	}
+
 	@media (max-width: 992px) {
 		.admin-container {
 			flex-direction: column;
@@ -675,6 +836,59 @@ try {
 		.two-col {
 			grid-template-columns: 1fr;
 		}
+	}
+
+	#managed_notice {
+		border: 1px solid #6c757d;
+		padding: 10pt;
+		margin-bottom: 20pt;
+		border-radius: 6px;
+		color: #b4b4b4;
+	}
+
+	.form-check {
+		display: flex;
+		align-items: flex-start;
+		gap: 15px;
+		position: relative;
+	}
+
+	.form-check-input {
+		width: 20px;
+		height: 20px;
+		margin: 0;
+		flex-shrink: 0;
+		cursor: pointer;
+		background-color: var(--bg-card);
+		border: 2px solid var(--border-color);
+	}
+
+	.form-check-input:checked {
+		background-color: #dc3545;
+		border-color: #dc3545;
+	}
+
+	.form-check-label {
+		cursor: pointer;
+		flex: 1;
+	}
+
+	.sidebar-link.delete-link {
+		background: rgba(220, 53, 69, 0.1);
+		border: 1px solid rgba(220, 53, 69, 0.3);
+		color: #dc3545;
+		font-weight: 500;
+	}
+
+	.sidebar-link.delete-link:hover {
+		background: rgba(220, 53, 69, 0.15);
+		border-color: rgba(220, 53, 69, 0.5);
+	}
+
+	.sidebar-link.delete-link.active {
+		background: rgba(220, 53, 69, 0.2);
+		border-color: #dc3545;
+		color: #dc3545;
 	}
 </style>
 
@@ -717,10 +931,12 @@ try {
 					<i class="fa-solid fa-users"></i>
 					<span>User Management</span>
 				</a>
-				<a href="admin.php?tab=database" class="sidebar-link <?php echo $tab === 'database' ? 'active' : ''; ?>">
-					<i class="fa-solid fa-database"></i>
-					<span>Database</span>
-				</a>
+				<?php if (!$is_managed_hosting) { ?>
+					<a href="admin.php?tab=database" class="sidebar-link <?php echo $tab === 'database' ? 'active' : ''; ?>">
+						<i class="fa-solid fa-database"></i>
+						<span>Database</span>
+					</a>
+				<?php } ?>
 			</div>
 
 			<div class="sidebar-divider"></div>
@@ -731,6 +947,12 @@ try {
 					<i class="fa-solid fa-lock"></i>
 					<span>Change Password</span>
 				</a>
+				<div style="margin-top:5pt;">
+					<a href="admin.php?tab=delete" class="sidebar-link delete-link <?php echo $tab === 'delete' ? 'active' : ''; ?>">
+						<i class="fa-solid fa-trash"></i>
+						<span>Delete Data</span>
+					</a>
+				</div>
 			</div>
 		</div>
 
@@ -739,16 +961,64 @@ try {
 			<?php if ($tab === 'settings'): ?>
 				<h2 class="admin_section"><i class="fa-solid fa-gears me-1"></i> Application Settings</h2>
 
+				<?php if ($is_managed_hosting) { ?>
+
+					<div class="alert alert-info">
+						<h3 style="margin-top:0; font-size:12pt;"><i class="fa-solid fa-user-gear me-2"></i> Manage Your Subscription</h3>
+						To manage your hosting subscription, including renewals and cancellations, please log in to the customer portal: <a target="_blank" href="https://app.ottstreamscore.com">app.ottstreamscore.com</a>
+					</div> <!-- alert -->
+
+				<?php } ?>
+
 				<form method="post" action="admin.php?tab=settings">
 					<input type="hidden" name="action" value="update_settings">
 					<?php echo csrf_field(); ?>
+					<?php $system_pause_check = $settings_map['pause_cron'] ?? ''; ?>
 
-					<div class="form-group">
-						<label for="stream_host">Stream Host *</label>
-						<input type="text" id="stream_host" name="stream_host"
-							value="<?php echo htmlspecialchars($settings_map['stream_host'] ?? ''); ?>" required>
-						<small>Base URL for stream authentication (no trailing slash).</small>
+					<div class="form-group mb-4">
+						<div class="p-3 bg-dark border rounded">
+							<div class="d-flex align-items-center justify-content-between">
+								<div class="d-flex align-items-center gap-3">
+									<label for="pause_cron" class="mb-0 fw-bold">System Status</label>
+									<label class="toggle-switch">
+										<input type="checkbox" id="pause_cron" name="pause_cron" <?php echo !$system_pause_check ? 'checked' : ''; ?>>
+										<span class="toggle-slider"></span>
+									</label>
+								</div>
+								<span class="badge cron-status-badge bg-success px-3 py-2">
+									<span class="cron-status-text">Active</span>
+								</span>
+							</div>
+							<small class="text-muted d-block mt-2">
+								Toggle to pause or resume automatic feed checking
+							</small>
+						</div>
 					</div>
+
+
+					<script>
+						document.addEventListener('DOMContentLoaded', function() {
+							const toggle = document.getElementById('pause_cron');
+							const statusBadge = document.querySelector('.cron-status-badge');
+							const statusText = document.querySelector('.cron-status-text');
+
+							function updateStatus() {
+								if (toggle.checked) {
+									statusBadge.classList.remove('bg-danger');
+									statusBadge.classList.add('bg-success');
+									statusText.textContent = 'Active';
+								} else {
+									statusBadge.classList.remove('bg-success');
+									statusBadge.classList.add('bg-danger');
+									statusText.textContent = 'Paused';
+								}
+							}
+
+							updateStatus();
+
+							toggle.addEventListener('change', updateStatus);
+						});
+					</script>
 
 					<div class="form-group">
 						<label for="app_timezone">Timezone *</label>
@@ -833,56 +1103,95 @@ try {
 
 					<h3>Monitoring Settings</h3>
 
-					<div class="two-col">
-						<div class="form-group">
-							<label for="batch_size">Batch Size *</label>
-							<input type="number" id="batch_size" name="batch_size"
-								value="<?php echo htmlspecialchars($settings_map['batch_size'] ?? 50); ?>"
-								min="1" max="500" required>
-							<small>Feeds processed per cron run</small>
+					<?php if ($is_managed_hosting) { ?>
+
+						<div id="managed_notice">
+							<strong>Managed Hosting Configuration</strong><br>
+							Your settings are automatically optimized for your managed hosting package.
+						</div> <!-- managed_notice -->
+
+						<div class="card bg-dark border-secondary">
+							<div class="card-header bg-secondary text-white" style="padding-left:5pt;">
+								<h5 style="font-size:13pt;" class="mb-0"><i class="bi bi-gear-fill me-2"></i>Optimized Settings</h5>
+							</div>
+							<ul class="list-group list-group-flush">
+								<li class="list-group-item bg-dark text-white d-flex justify-content-between align-items-center">
+									Batch Size
+									<span class="badge bg-primary rounded-pill">25</span>
+								</li>
+								<li class="list-group-item bg-dark text-white d-flex justify-content-between align-items-center">
+									Lock Duration
+									<span class="badge bg-primary rounded-pill">10 minutes</span>
+								</li>
+								<li class="list-group-item bg-dark text-white d-flex justify-content-between align-items-center">
+									Recheck Healthy Feeds
+									<span class="badge bg-primary rounded-pill">72 hours</span>
+								</li>
+								<li class="list-group-item bg-dark text-white d-flex justify-content-between align-items-center">
+									Min Retry Interval
+									<span class="badge bg-primary rounded-pill">30 minutes</span>
+								</li>
+								<li class="list-group-item bg-dark text-white d-flex justify-content-between align-items-center">
+									Max Retry Interval
+									<span class="badge bg-primary rounded-pill">360 minutes</span>
+								</li>
+							</ul>
+						</div>
+
+					<?php } else { ?>
+
+						<div class="two-col">
+							<div class="form-group">
+								<label for="batch_size">Batch Size *</label>
+								<input type="number" id="batch_size" name="batch_size"
+									value="<?php echo htmlspecialchars($settings_map['batch_size'] ?? 50); ?>"
+									min="1" max="500" required>
+								<small>Feeds processed per cron run</small>
+							</div>
+
+							<div class="form-group">
+								<label for="lock_minutes">Lock Duration (minutes) *</label>
+								<input type="number" id="lock_minutes" name="lock_minutes"
+									value="<?php echo htmlspecialchars($settings_map['lock_minutes'] ?? 10); ?>"
+									min="1" max="60" required>
+								<small>Prevent concurrent processing</small>
+							</div>
 						</div>
 
 						<div class="form-group">
-							<label for="lock_minutes">Lock Duration (minutes) *</label>
-							<input type="number" id="lock_minutes" name="lock_minutes"
-								value="<?php echo htmlspecialchars($settings_map['lock_minutes'] ?? 10); ?>"
-								min="1" max="60" required>
-							<small>Prevent concurrent processing</small>
-						</div>
-					</div>
-
-					<div class="form-group">
-						<label for="ok_recheck_hours">Recheck Healthy Feeds (hours) *</label>
-						<input type="number" id="ok_recheck_hours" name="ok_recheck_hours"
-							value="<?php echo htmlspecialchars($settings_map['ok_recheck_hours'] ?? 72); ?>"
-							min="1" max="720" required>
-						<small>How long to wait before rechecking working streams</small>
-					</div>
-
-					<div class="two-col">
-						<div class="form-group">
-							<label for="fail_retry_min">Min Retry Interval (minutes) *</label>
-							<input type="number" id="fail_retry_min" name="fail_retry_min"
-								value="<?php echo htmlspecialchars($settings_map['fail_retry_min'] ?? 30); ?>"
-								min="1" max="1440" required>
-							<small>Initial retry interval for failed feeds</small>
+							<label for="ok_recheck_hours">Recheck Healthy Feeds (hours) *</label>
+							<input type="number" id="ok_recheck_hours" name="ok_recheck_hours"
+								value="<?php echo htmlspecialchars($settings_map['ok_recheck_hours'] ?? 72); ?>"
+								min="1" max="720" required>
+							<small>How long to wait before rechecking working streams</small>
 						</div>
 
-						<div class="form-group">
-							<label for="fail_retry_max">Max Retry Interval (minutes) *</label>
-							<input type="number" id="fail_retry_max" name="fail_retry_max"
-								value="<?php echo htmlspecialchars($settings_map['fail_retry_max'] ?? 360); ?>"
-								min="1" max="1440" required>
-							<small>Maximum retry interval cap</small>
+						<div class="two-col">
+							<div class="form-group">
+								<label for="fail_retry_min">Min Retry Interval (minutes) *</label>
+								<input type="number" id="fail_retry_min" name="fail_retry_min"
+									value="<?php echo htmlspecialchars($settings_map['fail_retry_min'] ?? 30); ?>"
+									min="1" max="1440" required>
+								<small>Initial retry interval for failed feeds</small>
+							</div>
+
+							<div class="form-group">
+								<label for="fail_retry_max">Max Retry Interval (minutes) *</label>
+								<input type="number" id="fail_retry_max" name="fail_retry_max"
+									value="<?php echo htmlspecialchars($settings_map['fail_retry_max'] ?? 360); ?>"
+									min="1" max="1440" required>
+								<small>Maximum retry interval cap</small>
+							</div>
 						</div>
-					</div>
+
+					<?php } ?>
 
 					<div style="margin-top: 30px;">
 						<button type="submit" class="btn btn-outline-primary btn-md">Save Settings</button>
 					</div>
 				</form>
 
-			<?php elseif ($tab === 'database'): ?>
+			<?php elseif (($tab === 'database') && (!$is_managed_hosting)): ?>
 				<h2 class="admin_section"><i class="fa-solid fa-database me-1"></i> Database Configuration</h2>
 
 				<div class="settings-info">
@@ -1235,7 +1544,7 @@ try {
 							</div>
 							<div>
 								<strong>EPG Update Cron</strong> (Run twice daily at 12 AM and 12 PM)
-								<pre class="p-2 mt-1 mb-0" style="background: var(--bs-secondary-bg); border: 1px solid var(--bs-border-color); border-radius: 4px;"><code>0 0,12 * * * /usr/bin/php /path/to/install/epg_cron.php</code></pre>
+								<pre class="p-2 mt-1 mb-0" style="background: var(--bs-secondary-bg); border: 1px solid var(--bs-border-color); border-radius: 4px;"><code>0 0,12 * * * /usr/bin/php /path/to/install/cron_epg.php</code></pre>
 							</div>
 						</div>
 					</div>
@@ -1245,6 +1554,7 @@ try {
 				<script>
 					(function() {
 						let pendingCredentials = null;
+						let importSessionId = null;
 
 						checkForTempPlaylist();
 
@@ -1503,12 +1813,16 @@ try {
 						function startImport() {
 							$('#import-now-btn').prop('disabled', true);
 							$('#cancel-preview-btn').prop('disabled', true);
+							$('#edit-credentials-btn').prop('disabled', true);
 							$('#import-processing-container').show();
 							$('#import-results-container').hide();
 
 							const postData = {
-								mode: 'sync',
-								_ajax: '1'
+								action: 'start_import',
+								playlist: 'playlist_temp.m3u',
+								directory: 'playlists',
+								_ajax: '1',
+								csrf_token: $('input[name="csrf_token"]').first().val()
 							};
 
 							if (pendingCredentials) {
@@ -1516,35 +1830,88 @@ try {
 								postData.new_password = pendingCredentials.password;
 							}
 
+							// Update UI for progress
+							$('#import-processing-container .h5').text('Processing playlist...');
+							$('#import-processing-container .small').html(
+								'<div class="progress mt-3" style="height: 25px;">' +
+								'<div id="import-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%;">0%</div>' +
+								'</div>' +
+								'<div id="import-progress-text" class="mt-2">Initializing...</div>'
+							);
+
 							$.ajax({
 								url: 'import_handler.php',
 								type: 'POST',
 								data: postData,
 								dataType: 'json',
-								timeout: 300000,
+								timeout: 30000,
 								success: function(response) {
-									console.log('Import response:', response);
-									$('#import-processing-container').hide();
-
-									if (response.status === 'completed' && response.ok) {
-										deleteTempPlaylist();
-										showImportResults(response);
+									if (response.success && response.session_id) {
+										importSessionId = response.session_id;
+										$('#import-progress-text').text('Processed 0 of ' + response.total_entries + ' entries');
+										processBatch();
 									} else {
-										alert('Import failed: ' + (response.message || 'Unknown error'));
+										$('#import-processing-container').hide();
 										$('#import-now-btn').prop('disabled', false);
 										$('#cancel-preview-btn').prop('disabled', false);
+										alert('Failed to start import: ' + (response.error || 'Unknown error'));
 									}
 								},
 								error: function(xhr, status, error) {
-									console.log('Import error - Status:', status, 'Error:', error);
-									console.log('Response text:', xhr.responseText);
+									console.log('Import error:', status, error);
 									$('#import-processing-container').hide();
 									$('#import-now-btn').prop('disabled', false);
 									$('#cancel-preview-btn').prop('disabled', false);
-									if (status === 'timeout') {
-										alert('Import timed out. The process may still be running. Check your database.');
+									alert('Failed to start import: ' + error);
+								}
+							});
+						}
+
+						function processBatch() {
+							if (!importSessionId) return;
+
+							$.ajax({
+								url: 'import_handler.php',
+								type: 'POST',
+								data: {
+									action: 'process_batch',
+									session_id: importSessionId,
+									csrf_token: $('input[name="csrf_token"]').first().val()
+								},
+								dataType: 'json',
+								timeout: 120000,
+								success: function(response) {
+									if (response.success) {
+										$('#import-progress-bar').css('width', response.percent + '%').text(response.percent + '%');
+										$('#import-progress-text').text('Processed ' + response.processed + ' of ' + response.total + ' entries');
+
+										if (response.complete) {
+											$('#import-processing-container').hide();
+											deleteTempPlaylist();
+											showImportResults(response);
+										} else {
+											setTimeout(function() {
+												processBatch();
+											}, 100);
+										}
 									} else {
-										alert('Import failed: ' + error);
+										$('#import-processing-container').hide();
+										$('#import-now-btn').prop('disabled', false);
+										$('#cancel-preview-btn').prop('disabled', false);
+										$('#edit-credentials-btn').prop('disabled', false);
+										alert('Processing failed: ' + (response.error || 'Unknown error'));
+									}
+								},
+								error: function(xhr, status, error) {
+									console.log('Batch error:', status, error);
+									$('#import-processing-container').hide();
+									$('#import-now-btn').prop('disabled', false);
+									$('#edit-credentials-btn').prop('disabled', false);
+									$('#cancel-preview-btn').prop('disabled', false);
+									if (status === 'timeout') {
+										alert('Processing timed out. Please try again.');
+									} else {
+										alert('Processing failed: ' + error);
 									}
 								}
 							});
@@ -1612,6 +1979,110 @@ try {
 							$('#new-username, #confirm-username, #new-password, #confirm-password').val('');
 						}
 					})();
+				</script>
+
+			<?php elseif ($tab === 'delete'): ?>
+				<h2 class="admin_section"><i class="fa-solid fa-trash-can me-1"></i> Delete Account Data</h2>
+
+				<div class="alert alert-danger">
+					<i class="fa-solid fa-triangle-exclamation me-2"></i>
+					<strong>Warning:</strong> Deleting data is permanent and cannot be undone. Only the primary user account (User #1) can perform this action. You will need to authenticate before deletion.
+				</div>
+
+				<div class="card mb-4">
+					<div class="card-header fw-semibold bg-danger text-white">
+						<i class="fa-solid fa-database me-1"></i> Select Data to Delete
+					</div>
+					<div class="card-body">
+						<form method="post" action="admin.php?tab=delete" id="deleteDataForm">
+							<input type="hidden" name="action" value="delete_data">
+							<?php echo csrf_field(); ?>
+
+							<div class="mb-3 p-3 border rounded">
+								<div class="d-flex align-items-start gap-3">
+									<input class="form-check-input" type="checkbox" name="delete_playlist" value="1" id="delete_playlist" style="margin-top: 2px;">
+									<label class="form-check-label flex-grow-1" for="delete_playlist" style="cursor: pointer;">
+										<strong>Delete All Playlist Data</strong>
+										<div class="text-muted small mt-1">
+											Deletes all feeds, channels, feed history, check queue, editor tasks, group associations, and resets playlist URL. Allows you to start fresh with a new playlist.
+										</div>
+									</label>
+								</div>
+							</div>
+
+							<div class="mb-4 p-3 border rounded">
+								<div class="d-flex align-items-start gap-3">
+									<input class="form-check-input" type="checkbox" name="delete_epg" value="1" id="delete_epg" style="margin-top: 2px;">
+									<label class="form-check-label flex-grow-1" for="delete_epg" style="cursor: pointer;">
+										<strong>Delete All EPG Data</strong>
+										<div class="text-muted small mt-1">
+											Deletes all EPG program data and resets EPG URL. EPG will be re-imported on next cron run if URL is reconfigured.
+										</div>
+									</label>
+								</div>
+							</div>
+
+							<div class="card bg-dark border-warning mb-4">
+								<div class="card-header bg-warning text-dark">
+									<i class="fa-solid fa-shield-halved me-1"></i> Primary User Authentication Required
+								</div>
+								<div class="card-body">
+									<p class="mb-3">Enter the username and password for <strong>User #1</strong> (the primary account created during installation) to authorize deletion.</p>
+
+									<div class="row">
+										<div class="col-md-6 mb-3">
+											<label for="auth_username" class="form-label">Username *</label>
+											<input type="text" id="auth_username" name="auth_username" class="form-control" required autocomplete="off">
+										</div>
+										<div class="col-md-6 mb-3">
+											<label for="auth_password" class="form-label">Password *</label>
+											<input type="password" id="auth_password" name="auth_password" class="form-control" required autocomplete="off">
+										</div>
+									</div>
+								</div>
+							</div>
+
+							<div class="d-flex gap-2">
+								<button type="submit" class="btn btn-danger">
+									<i class="fa-solid fa-trash-can me-1"></i> Delete Selected Data
+								</button>
+								<button type="reset" class="btn btn-secondary">
+									<i class="fa-solid fa-times me-1"></i> Clear Form
+								</button>
+							</div>
+						</form>
+					</div>
+				</div>
+
+				<script>
+					document.getElementById('deleteDataForm').addEventListener('submit', function(e) {
+						e.preventDefault();
+
+						const deletePlaylist = document.getElementById('delete_playlist').checked;
+						const deleteEpg = document.getElementById('delete_epg').checked;
+
+						if (!deletePlaylist && !deleteEpg) {
+							alert('Please select at least one type of data to delete');
+							return;
+						}
+
+						let confirmMessage = 'You are about to permanently delete:\n\n';
+						if (deletePlaylist) confirmMessage += '• All Playlist Data (feeds, channels, history, etc.)\n';
+						if (deleteEpg) confirmMessage += '• All EPG Data\n';
+						confirmMessage += '\nThis action CANNOT be undone. Are you sure?';
+
+						if (!confirm(confirmMessage)) {
+							return;
+						}
+
+						// Second confirmation
+						if (!confirm('FINAL CONFIRMATION: This will permanently delete the selected data. Continue?')) {
+							return;
+						}
+
+						// Submit the form
+						this.submit();
+					});
 				</script>
 
 			<?php elseif ($tab === 'associations'): ?>
